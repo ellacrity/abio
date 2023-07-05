@@ -1,0 +1,19 @@
+# Use appropriate Rust edition
+edition = "2021"
+
+# Wrap comments after max length of 85 characters
+comment_width = 85
+wrap_comments = true
+
+# Make hexadecimal casing consistent
+hex_literal_case = "Lower"
+
+# Prevent Windows-style carriage returns
+newline_style = "Unix"
+
+# The "Default" setting has a heuristic which splits lines too aggresively.
+use_small_heuristics = "Max"
+
+# Consistent imports ordering
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"

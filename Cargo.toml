@@ -1,0 +1,21 @@
+[package]
+name = "aligned"
+version = "0.1.0"
+edition = "2021"
+description = """
+Endian-aware integral primitives with specified alignment requirements.
+"""
+resolver = "2"
+
+[features]
+default = ["derive"]
+network-order = []
+derive = ["aligned_derive"]
+
+[dependencies]
+byteorder = { version = "1.4.3", default-features = false }
+log = "0.4.19"
+
+[dependencies.aligned_derive]
+path = "derive"
+optional = true

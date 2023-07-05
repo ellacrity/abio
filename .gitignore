@@ -1,0 +1,17 @@
+# Cargo build artifacts
+/target
+/Cargo.lock
+
+# Internal assets and artifacts
+archive/
+assets/
+internal/
+private/
+spec/
+
+# IDEs and Editors
+.idea/
+.vscode/
+
+# Scratch space
+scratch*/
