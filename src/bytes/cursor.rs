@@ -102,11 +102,3 @@ impl From<usize> for BytePos {
         BytePos { value }
     }
 }
-
-// impl<'a> Index<BytePos> for Bytes<'a> {
-// type Output = [u8];
-//
-// fn index(&self, position: BytePos) -> &Self::Output {
-// &self.as_bytes()[position.get()..]
-// }
-// }
