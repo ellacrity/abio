@@ -3,7 +3,7 @@ name = "aligned"
 version = "0.1.1"
 edition = "2021"
 description = """
-Endian-aware integral primitives with specified alignment requirements.
+Safely transmute between raw byte slices and concrete data types.
 """
 resolver = "2"
 license = "MIT OR Apache-2.0"
