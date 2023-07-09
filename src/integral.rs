@@ -1,104 +1,45 @@
-use core::{array, slice};
-
 // FIXME: Implement derive macros to implement aligned integral types (ella)
 mod unsigned;
-pub use unsigned::*;
+pub use unsigned::{U128, U16, U32, U64, U8};
 
 // FIXME: Implement derive macros to implement aligned integral types (ella)
 mod signed;
-pub use signed::*;
+pub use signed::{I128, I16, I32, I64, I8};
 
-use crate::{AsBytes, FromBytes, Pod, Zeroable};
+use crate::{Aligned, Decodable};
 
-unsafe impl AsBytes for u8 {
-    fn as_bytes(&self) -> &[u8] {
-        array::from_ref(self)
-    }
-}
-unsafe impl FromBytes for u8 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; core::mem::size_of::<Self>()] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(Self::from_le_bytes(bytes))
-        }
-    }
-}
-unsafe impl Zeroable for u8 {}
-unsafe impl Pod for u8 {}
+impl Decodable for u8 {}
+impl Decodable for u16 {}
+impl Decodable for u32 {}
+impl Decodable for u64 {}
+impl Decodable for u128 {}
 
-unsafe impl AsBytes for u32 {
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            let len = core::mem::size_of_val(self);
-            slice::from_raw_parts(self as *const Self as *const u8, len)
-        }
-    }
-}
-unsafe impl FromBytes for u32 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; core::mem::size_of::<Self>()] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(Self::from_le_bytes(bytes))
-        }
-    }
-}
-unsafe impl Zeroable for u32 {}
-unsafe impl Pod for u32 {}
+/// Marker trait for endian-aware integral types.
+///
+/// # Safety
+///
+/// This trait must only be implemented for integral types, or wrapper types
+/// containing integrals. Implementing this trait for types that fail to meet these
+/// requirements results in immediate **undefined behaviour**.
+pub unsafe trait Integral: Aligned {}
 
-unsafe impl AsBytes for U16 {
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            let len = core::mem::size_of_val(self);
-            slice::from_raw_parts(self.get() as *const u16 as *const u8, len)
-        }
-    }
+macro_rules! impl_integral_for_aligned_primitives {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            unsafe impl Integral for $ty {}
+        )*
+    };
 }
-unsafe impl FromBytes for U16 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; core::mem::size_of::<Self>()] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(Self::from_le_bytes(bytes))
-        }
-    }
-}
-unsafe impl Zeroable for U16 {}
-unsafe impl Pod for U16 {}
 
-unsafe impl AsBytes for U32 {
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            let len = core::mem::size_of_val(self);
-            slice::from_raw_parts(self.get() as *const u32 as *const u8, len)
-        }
-    }
+impl_integral_for_aligned_primitives! {
+    u8, u16, u32, u64, u128, usize,
+    U8, U16, U32, U64, U128
 }
-unsafe impl FromBytes for U32 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; core::mem::size_of::<Self>()] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(Self::from_le_bytes(bytes))
-        }
-    }
+impl_integral_for_aligned_primitives! {
+    i8, i16, i32, i64, i128, isize,
+    I8, I16, I32, I64, I128,
 }
-unsafe impl Zeroable for U32 {}
-unsafe impl Pod for U32 {}
+
+// pub fn is_aligned_with<A: Aligned>(bytes: &[u8]) -> bool {
+//     bytes.as_ptr().addr() & (A::MIN_ALIGN - 1) == 0
+// }

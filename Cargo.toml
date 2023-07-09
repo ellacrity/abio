@@ -1,3 +1,9 @@
+# Put both crates in a single workspace so that `trybuild` compiler errors have
+# paths that are stable regardless of the path to the repository root. This
+# avoids issues like:
+# https://github.com/dtolnay/trybuild/issues/207#issuecomment-1312277494
+[workspace]
+
 [package]
 name = "aligned"
 version = "0.1.1"
@@ -8,15 +14,22 @@ Safely transmute between raw byte slices and concrete data types.
 resolver = "2"
 license = "MIT OR Apache-2.0"
 
+exclude = [".*"]
+
+[lib]
+name = "aligned_rs"
+crate-type = ["lib"]
+
 [features]
 default = ["derive"]
-network-order = []
 derive = ["aligned_derive"]
-
-[dependencies]
-byteorder = { version = "1.4.3", default-features = false }
-log = "0.4.19"
 
 [dependencies.aligned_derive]
 path = "derive"
 optional = true
+
+[dev-dependencies]
+getrandom = "0.2.10"
+
+[package.metadata.docs.rs]
+all-features = true

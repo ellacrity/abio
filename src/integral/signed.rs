@@ -1,119 +1,130 @@
 //! Aligned, endian-aware __signed__ integral types.
 
-use core::{mem, slice};
-
-use crate::{AsBytes, FromBytes, Pod, Zeroable};
+use crate::abi::BytesExt;
+use crate::Decodable;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct I8(i8);
 
-impl I8 {
-    pub const fn new(value: i8) -> I8 {
-        I8(value.to_le())
-    }
-
-    pub const fn from_ptr(ptr: *const u8) -> I8 {
-        I8::new(unsafe { ptr.cast::<i8>().read() })
-    }
-
-    pub const fn get(&self) -> i8 {
-        self.0
-    }
-}
-
-unsafe impl AsBytes for I8 {
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            slice::from_raw_parts(
-                self.get() as *const i8 as *const u8,
-                core::mem::size_of_val(self),
-            )
-        }
-    }
-}
-
-unsafe impl FromBytes for I8 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; 1] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(I8::new(i8::from_le_bytes(bytes)))
-        }
-    }
-}
-
-unsafe impl Pod for I8 {}
-unsafe impl Zeroable for I8 {}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct I16(i16);
 
-impl I16 {
-    pub const fn new(value: i16) -> I16 {
-        I16(value.to_le())
-    }
-
-    pub const fn from_ptr(ptr: *const u8) -> I16 {
-        let mut pos = 0;
-
-        I16::new(unsafe { ptr.cast::<i16>().read() })
-    }
-
-    pub const fn get(&self) -> i16 {
-        self.0
-    }
-}
-
-unsafe impl AsBytes for I16 {
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            // NOTE: This function does not have a Self: Sized bound.
-            // size_of_val works for unsized values too.
-            let len = mem::size_of_val(self);
-            slice::from_raw_parts(self as *const Self as *const u8, len)
-        }
-    }
-}
-unsafe impl FromBytes for I16 {
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        assert_preconditions!(bytes, Self);
-        if bytes.is_empty() || bytes.len() < Self::SIZE {
-            None
-        } else {
-            let bytes: [u8; 2] = bytes[..Self::SIZE]
-                .try_into()
-                .expect("infallible operation occurred converting bytes to array");
-            Some(I16::new(i16::from_le_bytes(bytes)))
-        }
-    }
-}
-unsafe impl Pod for I16 {}
-unsafe impl Zeroable for I16 {}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct I32(i32);
-impl I32 {
-    pub const fn new(value: i32) -> I32 {
-        I32(value.to_le())
-    }
-
-    pub const fn from_ptr(ptr: *const u8) -> I32 {
-        let mut pos = 0;
-
-        I32::new(unsafe { ptr.cast::<i32>().read() })
-    }
-
-    pub const fn get(&self) -> i32 {
-        self.0
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct I64(i64);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct I128(i128);
+
+impl Decodable for I8 {}
+impl Decodable for I16 {}
+impl Decodable for I32 {}
+impl Decodable for I64 {}
+impl Decodable for I128 {}
+
+macro_rules! impl_signed_integral {
+    (
+        $ty:ident -> $int:tt
+    ) => {
+        impl $ty {
+            #[doc = concat!("Creates a new [`", stringify!($ty), "`] from a fixed size array of bytes.")]
+            #[inline]
+            pub const fn new(value: $int) -> $ty {
+                $ty(<$int>::from_le(value))
+            }
+
+            #[doc = concat!("Reads an aligned, endian-aware [`", stringify!($ty), "`] from a slice of bytes.")]
+            #[doc = ""]
+            #[doc = "This method is endian-agnostic, using the host native endianness, or byte order, to"]
+            #[doc = "perform any required conversions. In many cases, this results in a noop, since the"]
+            #[doc = "bytes already exist in the appropriate byte order serialization type."]
+            #[doc = ""]
+            #[doc = "# Errors"]
+            #[doc = ""]
+            #[doc = "This function will return an error if ."]
+            pub fn from_bytes(bytes: &[u8]) -> crate::Result<$ty> {
+                if bytes.len() < ::core::mem::size_of::<Self>() {
+                    return Err($crate::Error::size_mismatch(::core::mem::size_of::<Self>(), bytes.len()));
+                }
+
+                let bytes = $crate::util::as_byte_array(bytes)?;
+                if !bytes.is_aligned_with::<Self>() {
+                    Err(crate::Error::misaligned_access(&bytes))
+                } else {
+                    Ok(Self::new($int::from_le_bytes(bytes)))
+                }
+            }
+
+            #[inline]
+            pub const fn from_le_bytes(bytes: [u8; ::core::mem::size_of::<Self>()]) -> Self {
+                Self(<$int>::from_le_bytes(bytes))
+            }
+
+            #[inline]
+            pub const fn from_be_bytes(bytes: [u8; ::core::mem::size_of::<Self>()]) -> Self {
+                Self(<$int>::from_be_bytes(bytes))
+            }
+
+            #[doc = "Return the memory representation of this integer as a byte array in little-endian byte order."]
+            #[inline]
+            pub const fn to_le_bytes(self) -> [u8; ::core::mem::size_of::<Self>()] {
+                self.0.to_le_bytes()
+            }
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in native-endian byte order.")]
+            #[inline(always)]
+            pub const fn get(self) -> $int {
+                self.0
+            }
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in little-endian byte order.")]
+            #[inline(always)]
+            pub const fn get_le(self) -> $int {
+                self.0.to_le()
+            }
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in big-endian byte order.")]
+            #[inline(always)]
+            pub const fn get_be(self) -> $int {
+                self.0.to_be()
+            }
+        }
+
+        impl From<$int> for $ty {
+            fn from(int: $int) -> $ty {
+                $ty(int)
+            }
+        }
+
+        impl ::core::fmt::Display for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Display::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::LowerHex for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::LowerHex::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::UpperHex for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::UpperHex::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::Binary for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Binary::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::Octal for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Octal::fmt(&self.get_le(), f)
+            }
+        }
+    };
+}
+
+impl_signed_integral!(I8 -> i8);
+impl_signed_integral!(I16 -> i16);
+impl_signed_integral!(I32 -> i32);
+impl_signed_integral!(I64 -> i64);
+impl_signed_integral!(I128 -> i128);

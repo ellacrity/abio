@@ -1,0 +1,12 @@
+[build]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=uuid_unstable"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-faeture=uuid_unstable"]
+
+# target_arch="x86_64"
+# target_vendor="pc"
+# target_os="windows"
+# target_env="msvc"

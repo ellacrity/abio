@@ -1,24 +1,37 @@
-# Setup
+# Load environment variables from .env file.
 set dotenv-load := true
+
+# Set shell for executing commands
 set windows-shell := ["pwsh", "-NoProfile", "-NoLogo", "-Command"]
 set shell := ["bash", "-cu"]
 
+# Workspace-local variables
 release_mode := "--release"
+compiler_target := if os_family() == "windows" { "x86_64-pc-windows-msvc" } else { "x86_64-unknown-linux-gnu" }
+rust_toolchain := "nightly"
 
 # List all available recipes
 _default:
     @just --list
 
+show-target:
+    echo "{{ compiler_target }} with {{ rust_toolchain }} toolchain"
+
+# Bootstrap environment, verifying all tools are installed
+bootstrap:
+    rustup default {{ rust_toolchain }}
+    cargo binstall cargo-audit cargo-expand cargo-watch
+
 # Run benchmark suite
-@bench:
+bench:
     cargo +nightly bench
 
 # Build project in debug or release mode
-@build *MODE:
-    cargo build --workspace --all-targets {{ if MODE != "" { release_mode } else { "" } }}
+build *MODE:
+    cargo build --workspace --target={{compiler_target}} {{ if MODE != "" { release_mode } else { "" } }}
 
 # Build project in debug or release mode and update Cargo.lock
-@build-locked *MODE:
+build-locked *MODE:
     cargo build --workspace --all-targets --locked {{ if MODE != "" { release_mode } else { "" } }}
     
 # Build project (debug and release mode)

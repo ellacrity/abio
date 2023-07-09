@@ -1,10 +1,7 @@
 //! Aligned, endian-aware __unsigned__ integral types.
 
-use core::mem::{align_of, size_of};
-
-use crate::bytes::AlignedBytes;
-use crate::error::LayoutError;
-use crate::SizeMismatchError;
+use crate::abi::BytesExt;
+use crate::Decodable;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct U8(u8);
@@ -12,91 +9,9 @@ pub struct U8(u8);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct U16(u16);
 
-impl U16 {
-    pub fn read_aligned(bytes: &[u8]) -> Result<U16, SizeMismatchError> {
-        let src_len = bytes.len();
-        if src_len < ::core::mem::size_of::<Self>() {
-            return Err(SizeMismatchError::new::<Self>(src_len));
-        }
-
-        let parsed: [u8; ::core::mem::size_of::<Self>()] = bytes[..::core::mem::size_of::<Self>()]
-            .try_into()
-            .expect("infallible conversion occurred from bytes to integer");
-        if parsed.is_ptr_aligned::<Self>() {
-            Ok(U16::new(u16::from_le_bytes(parsed)))
-        } else {
-            Err(SizeMismatchError::new::<Self>(src_len))
-        }
-    }
-
-    pub const fn from_le_bytes(bytes: [u8; core::mem::size_of::<Self>()]) -> U16 {
-        U16(u16::from_le_bytes(bytes))
-    }
-}
-
 /// Aligned, 32-bit integer with native-endian byte order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct U32(u32);
-
-impl U32 {
-    // /// Creates a new [`U32`] from a fixed size array of bytes.
-    // pub fn new(value: u32) -> U32 {
-    //     U32(u32::from_le(value))
-    // }
-
-    /// Reads an aligned, endian-aware [`U32`] from a slice of bytes.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    pub fn read(bytes: &[u8]) -> Result<U32, LayoutError> {
-        if bytes.len() < ::core::mem::size_of::<Self>() {
-            return Err(LayoutError::new("unsufficient memory to construct U32 from bytes: `bytes.len() < size_of::<Self>()` "));
-        }
-
-        let byte_array: [u8; ::core::mem::size_of::<Self>()] = bytes
-            [..::core::mem::size_of::<Self>()]
-            .try_into()
-            .expect("infallible conversion occurred from bytes to integer");
-
-        if !bytes.is_ptr_aligned::<Self>() {
-            Err(LayoutError::new("attempted to read from an unaligned pointer"))
-        } else {
-            Ok(Self::new(u32::from_le_bytes(byte_array)))
-        }
-    }
-
-    // /// Convert this [U32] into a fixed size array of bytes.
-    // pub fn to_bytes(&self) -> &[u8] {
-    //     &self.0.to_le_bytes()[..]
-    // }
-
-    // /// Return the memory representation of this integer as a byte array in
-    // /// little-endian byte order.
-    // pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
-    //     self.0.to_le_bytes()
-    // }
-
-    /// Gets the inner value from this container in little-endian byte order.
-    pub fn get_le(self) -> u32 {
-        self.0.to_le()
-    }
-
-    /// Gets the inner value from this container in big-endian byte order.
-    pub fn get_be(self) -> u32 {
-        self.0.to_be()
-    }
-
-    pub const fn from_le_bytes(bytes: [u8; core::mem::size_of::<Self>()]) -> U32 {
-        U32(u32::from_le_bytes(bytes))
-    }
-}
-
-impl From<u32> for U32 {
-    fn from(value: u32) -> U32 {
-        U32::new(value)
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct U64(u64);
@@ -104,42 +19,108 @@ pub struct U64(u64);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct U128(u128);
 
+impl Decodable for U8 {}
+impl Decodable for U16 {}
+impl Decodable for U32 {}
+impl Decodable for U64 {}
+impl Decodable for U128 {}
+
 macro_rules! impl_unsigned_int {
     (
-        $wrapper:ident -> $inner:tt
+        $ty:ident -> $int:tt
     ) => {
-        impl $wrapper {
-            #[doc = concat!("Creates a new [`", stringify!($wrapper), "`] from a fixed size array of bytes.")]
-            pub fn new(value: $inner) -> $wrapper {
-                $wrapper(<$inner>::from_le(value))
+        impl $ty {
+            #[doc = concat!("Creates a new [`", stringify!($ty), "`] from a fixed size array of bytes.")]
+            #[inline]
+            pub const fn new(value: $int) -> $ty {
+                $ty(<$int>::from_le(value))
             }
 
-            /// Return the memory representation of this integer as a byte array in
-            /// little-endian byte order.
-            pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
+            #[doc = concat!("Reads an aligned, endian-aware [`", stringify!($ty), "`] from a slice of bytes.")]
+            #[doc = ""]
+            #[doc = "This method is endian-agnostic, using the host native endianness, or byte order, to"]
+            #[doc = "perform any required conversions. In many cases, this results in a noop, since the"]
+            #[doc = "bytes already exist in the appropriate byte order serialization type."]
+            #[doc = ""]
+            #[doc = "# Errors"]
+            #[doc = ""]
+            #[doc = "This function will return an error if ."]
+            pub fn from_bytes(bytes: &[u8]) -> crate::Result<$ty> {
+                if bytes.len() < ::core::mem::size_of::<Self>() {
+                    return Err($crate::Error::size_mismatch(::core::mem::size_of::<Self>(), bytes.len()));
+                }
+
+                let bytes = $crate::util::as_byte_array(bytes)?;
+                if !bytes.is_aligned_with::<Self>() {
+                    Err(crate::Error::misaligned_access(&bytes))
+                } else {
+                    Ok(Self::new($int::from_le_bytes(bytes)))
+                }
+            }
+
+            #[inline]
+            pub const fn from_le_bytes(bytes: [u8; ::core::mem::size_of::<Self>()]) -> Self {
+                Self(<$int>::from_le_bytes(bytes))
+            }
+
+            #[inline]
+            pub const fn from_be_bytes(bytes: [u8; ::core::mem::size_of::<Self>()]) -> Self {
+                Self(<$int>::from_be_bytes(bytes))
+            }
+
+            #[doc = "Return the memory representation of this integer as a byte array in little-endian byte order."]
+            #[inline]
+            pub const fn to_le_bytes(self) -> [u8; ::core::mem::size_of::<Self>()] {
                 self.0.to_le_bytes()
             }
-
-            /// Gets the value from this container in native-endian byte order.
-            pub fn get(self) -> $inner {
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in native-endian byte order.")]
+            #[inline(always)]
+            pub const fn get(self) -> $int {
                 self.0
             }
-        }
-    };
-}
-
-macro_rules! impl_aligned_read {
-    ($ty:ty) => {
-        $(
-            /// Reads an aligned, endian-aware [`U32`] from a slice of bytes.
-            ///
-            /// # Errors
-            ///
-            /// This function will return an error if .
-            pub fn read(bytes: &[u8]) -> Result<$ty, $crate::error::LayoutError> {
-                read_aligned!(bytes, $ty -> read_$inner)
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in little-endian byte order.")]
+            #[inline(always)]
+            pub const fn get_le(self) -> $int {
+                self.0.to_le()
             }
-        )*
+            #[doc = concat!("Gets the inner [`", stringify!($int), "`] value from this container in big-endian byte order.")]
+            #[inline(always)]
+            pub const fn get_be(self) -> $int {
+                self.0.to_be()
+            }
+        }
+
+        impl From<$int> for $ty {
+            fn from(int: $int) -> $ty {
+                $ty(int)
+            }
+        }
+
+        impl ::core::fmt::Display for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Display::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::LowerHex for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::LowerHex::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::UpperHex for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::UpperHex::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::Binary for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Binary::fmt(&self.get_le(), f)
+            }
+        }
+        impl ::core::fmt::Octal for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Octal::fmt(&self.get_le(), f)
+            }
+        }
     };
 }
 

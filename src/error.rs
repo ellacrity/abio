@@ -1,87 +1,122 @@
 //! Common errors that may occur within the `aligned` crate.
 
-use core::alloc::Layout;
 use core::fmt;
 
-/// Generic error associated with a mismatch in alignment.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LayoutError {
-    message: &'static str,
+/// Primary error type for this crate.
+#[derive(Debug, PartialEq)]
+pub struct Error {
+    kind: ErrorKind,
 }
 
-impl LayoutError {
-    pub fn new(message: &'static str) -> Self {
-        LayoutError { message }
+impl Error {
+    pub const fn new(repr: ErrorKind) -> Error {
+        Error { kind: repr }
+    }
+
+    pub const fn buffer_overflow(required: usize, actual: usize) -> Error {
+        Error::new(ErrorKind::buffer_overflow(required, actual))
+    }
+
+    pub fn misaligned_access(bytes: &[u8]) -> Error {
+        Error::new(ErrorKind::misaligned_access(bytes))
+    }
+
+    pub const fn size_mismatch(required: usize, actual: usize) -> Error {
+        Error::new(ErrorKind::size_mismatch(required, actual))
+    }
+
+    pub const fn verbose(message: &'static str) -> Error {
+        Error::new(ErrorKind::verbose(message))
+    }
+
+    pub const fn internal_failure() -> Error {
+        Error::new(ErrorKind::internal_failure())
     }
 }
 
-impl From<MisalignedAccessError> for LayoutError {
-    fn from(value: MisalignedAccessError) -> Self {
-        #[cfg(feature = "debugging")]
-        log::error!("{value}");
-        LayoutError { message: value.as_str() }
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Error {
+        Error { kind }
     }
 }
 
-/// Buffer overflow error.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BufferOverflowError;
-
-impl From<SizeMismatchError> for BufferOverflowError {
-    fn from(value: SizeMismatchError) -> Self {
-        #[cfg(feature = "debugging")]
-        log::error!("{value}");
-        BufferOverflowError
+impl From<&'static str> for Error {
+    fn from(message: &'static str) -> Error {
+        Error::verbose(message)
     }
 }
 
-/// Error caused by an attempt to read data from a buffer that should contain bytes,
-/// but due to some underyling OS issue, is empty or contains insufficient allocated
-/// bytes.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BufferUnderflowError;
+/// Errors that may occur from operations
+#[derive(Debug, Default, PartialEq)]
+pub enum ErrorKind {
+    /// An operation resulted in a buffer overflow.
+    BufferOverflow {
+        /// Number of bytes exceeded with respect to the buffer size.
+        amount: usize,
+    },
+    /// Error caused by an invalid operation attempting to access memory without
+    /// first aligning the pointer accessing the underlying data.
+    MisalignedAccess {
+        /// Address where the memory access occurred.
+        address: usize,
+    },
+    /// Error occurring when the source and destination types occupy, or represent,
+    /// memoy regions with different sizes.
+    SizeMismatch {
+        /// Required number of bytes needed to decode the target type.
+        required: usize,
+        /// Actual number of available bytes in the buffer.
+        actual: usize,
+    },
+    /// Error with a detailed message meant for debugging purposes.
+    Verbose {
+        /// Detailed error message explaining the failure.
+        message: &'static str,
+    },
+    /// Error with an unknown or unexpected origin.
+    #[default]
+    InternalFailure,
+}
 
-/// An attempt was made to access memory without first aligning the pointer accessing
-/// the data.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MisalignedAccessError;
+impl ErrorKind {
+    pub(crate) const fn buffer_overflow(required: usize, actual: usize) -> Self {
+        ErrorKind::BufferOverflow { amount: required.saturating_sub(actual) }
+    }
 
-impl MisalignedAccessError {
-    fn as_str(&self) -> &'static str {
-        "Error caused by an attempt to access memory with a misaligned pointer"
+    pub(crate) fn misaligned_access(bytes: &[u8]) -> Self {
+        ErrorKind::MisalignedAccess { address: bytes.as_ptr().addr() }
+    }
+
+    pub(crate) const fn size_mismatch(required: usize, actual: usize) -> Self {
+        ErrorKind::SizeMismatch { required, actual }
+    }
+
+    pub(crate) const fn verbose(message: &'static str) -> Self {
+        ErrorKind::Verbose { message }
+    }
+
+    pub(crate) const fn internal_failure() -> Self {
+        ErrorKind::InternalFailure
     }
 }
 
-/// Error occurring when the source and destination types occupy, or represent,
-/// differently-sized memory regions.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SizeMismatchError {
-    needed: usize,
-    actual: usize,
-}
-
-impl SizeMismatchError {
-    pub const fn new<T>(actual: usize) -> SizeMismatchError {
-        SizeMismatchError { needed: core::mem::size_of::<T>(), actual }
-    }
-
-    pub const fn difference(&self) -> usize {
-        self.needed.abs_diff(self.actual)
-    }
-}
-
-impl From<(usize, usize)> for SizeMismatchError {
-    fn from(from: (usize, usize)) -> SizeMismatchError {
-        let (needed, actual) = from;
-        SizeMismatchError { needed, actual }
-    }
-}
-
-impl fmt::Display for SizeMismatchError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "SizeMismatchError: cannot transmute safely between two independently-sized types."
-        )
+        match &self.kind {
+            ErrorKind::BufferOverflow { amount } => {
+                write!(f, "Operation resulted in a buffer overflow by {amount} bytes.")
+            }
+            ErrorKind::MisalignedAccess { address } => {
+                write!(f, "Misaligned memory access at address: {address} ({address:x}).")
+            }
+            ErrorKind::SizeMismatch { required, actual } => {
+                write!(f, "Size mismatch error. Required {required} bytes, got {actual}.")
+            }
+            ErrorKind::Verbose { message } => write!(f, "[ERROR]: {message}"),
+            ErrorKind::InternalFailure => write!(
+                f,
+                "Entered unrecoverable failure state with an unknown or unexpected origin."
+            ),
+        }
     }
 }

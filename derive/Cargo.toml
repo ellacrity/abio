@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+name = "aligned_derive"
 proc-macro = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,4 +15,4 @@ quote = "1.0.29"
 syn = { version = "2.0.23", features = ["extra-traits", "full"] }
 
 [dev-dependencies.aligned]
-path = "aligned"
+path = "../"
