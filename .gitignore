@@ -3,15 +3,19 @@
 /Cargo.lock
 
 # Internal assets and artifacts
-archive/
 assets/
 internal/
 private/
 spec/
 
+# Archived and temporary files
+.archive/
+.temp/
+
 # IDEs and Editors
 .idea/
 .vscode/
+!.vscode/settings.json
 
 # Scratch space
 scratch*/

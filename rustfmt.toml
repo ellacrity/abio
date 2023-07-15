@@ -17,3 +17,6 @@ use_small_heuristics = "Max"
 # Consistent imports ordering
 imports_granularity = "Module"
 group_imports = "StdExternalCrate"
+
+# Reorder trait implementations for consistency.
+reorder_impl_items = true

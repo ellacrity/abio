@@ -1,35 +1,51 @@
-# Put both crates in a single workspace so that `trybuild` compiler errors have
-# paths that are stable regardless of the path to the repository root. This
-# avoids issues like:
-# https://github.com/dtolnay/trybuild/issues/207#issuecomment-1312277494
-[workspace]
-
 [package]
-name = "aligned"
-version = "0.1.1"
+name = "abio"
+version = "0.2.1"
 edition = "2021"
 description = """
-Safely transmute between raw byte slices and concrete data types.
+Safe abstractions for interfacing with the native operating system ABI.
 """
-resolver = "2"
-license = "MIT OR Apache-2.0"
-
-exclude = [".*"]
+license = "MIT"
+authors = ["ellacrity"]
+exclude = ["/main.rs"]
+categories = ["encoding", "no-std", "development-tools::ffi"]
 
 [lib]
-name = "aligned_rs"
+name = "abio"
 crate-type = ["lib"]
+
+[[bin]]
+name = "abio"
+path = "main.rs"
 
 [features]
 default = ["derive"]
-derive = ["aligned_derive"]
+derive = ["abio_derive"]
+std = []
+prelude = []
+# byte-pattern = ["memchr"]
 
-[dependencies.aligned_derive]
-path = "derive"
-optional = true
+[dependencies]
+abio_derive = { version = "0.1.1", path = "derive", optional = true }
+memchr = { version = "2.5.0", default-features = false }
 
 [dev-dependencies]
 getrandom = "0.2.10"
 
+# Enable all features for the docs.rs metadata.
 [package.metadata.docs.rs]
 all-features = true
+
+[profile.dev]
+debug = 0
+debug-assertions = true
+
+[profile.test]
+debug = true
+debug-assertions = true
+
+[profile.release]
+debug = 0
+debug-assertions = false
+strip = true
+lto = true

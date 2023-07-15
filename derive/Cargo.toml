@@ -1,18 +1,22 @@
 [package]
-name = "aligned_derive"
-version = "0.1.0"
+name = "abio_derive"
+version = "0.1.1"
 edition = "2021"
+description = "Derive macros for the `abio` crate."
+categories = ["encoding", "no-std"]
 
 [lib]
-name = "aligned_derive"
+name = "abio_derive"
 proc-macro = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-proc-macro2 = { version = "1.0.63", features = ["nightly", "span-locations"] }
-quote = "1.0.29"
-syn = { version = "2.0.23", features = ["extra-traits", "full"] }
+bstr = "1.6.0"
+obfstr = "0.4.3"
+proc-macro2 = { version = "1", features = ["nightly", "span-locations"] }
+quote = "1"
+syn = { version = "2.0.25", features = ["extra-traits", "full", "visit", "fold", "visit-mut"] }
+virtue = { version = "0.0.14", features = ["proc-macro2"] }
 
-[dev-dependencies.aligned]
+[dev-dependencies.abio]
 path = "../"
+features = ["derive"]

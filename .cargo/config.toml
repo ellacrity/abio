@@ -1,12 +1,17 @@
+# Build directives
 [build]
 
+# Windows x64 MSVC (Intel x86_64)
+#
+# Windows MSVC toolchain (native)
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=uuid_unstable"]
 
+# Linux x64 GNU (Intel x86_64)
+#
+# Linux desktop and server
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-faeture=uuid_unstable"]
 
-# target_arch="x86_64"
-# target_vendor="pc"
-# target_os="windows"
-# target_env="msvc"
+# Linux aarch64 GNU (Cortex A72)
+# 
+# Raspberry PI 4
+[target.aarch64-unknown-linux-gnu]

@@ -1,83 +1,98 @@
-use core::marker::PhantomData;
+use crate::Abi;
+
+#[macro_export]
+macro_rules! array {
+    ($(&)? $bytes:ident of $ty:ty) => {{
+        unsafe {
+            let data = $bytes.as_ptr();
+            let bytes = ::core::slice::from_raw_parts(data, ::core::mem::size_of::<$ty>());
+            let ptr = bytes.as_ptr().cast::<[u8; ::core::mem::size_of::<$ty>()]>();
+            assert!(!ptr.is_null());
+            ptr.read()
+        }
+    }};
+    ($(&)? $bytes:ident read $size:expr) => {{
+        unsafe {
+            let data = $bytes.as_ptr();
+            let bytes = ::core::slice::from_raw_parts(data, $size);
+            let ptr = bytes.as_ptr().cast::<[u8; $size]>();
+            ptr.read()
+        }
+    }};
+    ($(&)? $bytes:ident with $size:expr) => {{
+        let array_slice = unsafe {
+            let data = <*const _>::from($bytes).cast::<u8>();
+            assert_eq!(::core::mem::size_of_val($bytes), $size);
+            ::core::slice::from_raw_parts(data, $size)
+        };
+        <[u8; $size]>::try_from(array_slice)
+    }};
+}
+
+#[macro_export]
+macro_rules! bytes_of {
+    ($name:ident with $size:literal) => {{
+        let data = ($name as *const Self).cast::<u8>();
+        assert_eq!(::core::size_of_val($name), $size);
+        ::core::slice::from_raw_parts(data, $size)
+    }};
+    ($name:ident) => {{
+        let data = ($name as *const Self).cast::<u8>();
+        let size = ::core::mem::size_of::<$name>();
+        assert_eq!(::core::size_of_val($name), size);
+        ::core::slice::from_raw_parts(data, size)
+    }};
+}
+
+pub const unsafe fn try_cast_bytes<T: Abi, const SIZE: usize>(bytes: &[u8]) -> [u8; SIZE] {
+    bytes.as_ptr().cast::<[u8; SIZE]>().read()
+}
 
 /// Converts a dynamically-sized slice of bytes to a fixed size array of bytes.
 ///
 /// Returns an error `bytes.len() != SIZE`.
-pub const fn as_byte_array<const SIZE: usize>(bytes: &[u8]) -> crate::Result<[u8; SIZE]> {
-    if bytes.len() != SIZE {
-        Err(crate::Error::size_mismatch(SIZE, bytes.len()))
-    } else {
-        // SAFETY: The length of the input bytes matches the length of the output array.
-        // Additionally,
-        Ok(unsafe { bytes.as_ptr().cast::<[u8; SIZE]>().read() })
+#[inline]
+#[allow(dead_code)]
+pub const unsafe fn to_byte_array<const SIZE: usize>(bytes: &[u8]) -> [u8; SIZE] {
+    // debug_assert!(bytes.len() >= SIZE);
+    // bytes.as_ptr().cast::<[u8; SIZE]>().read()
+    array!(bytes with SIZE)
+}
+
+#[inline]
+pub fn into_byte_array<const SIZE: usize>(bytes: &[u8]) -> Option<[u8; SIZE]> {
+    match <[u8; SIZE]>::try_from(bytes) {
+        Ok(array) => Some(array),
+        Err(..) => None,
     }
-}
-
-/// Compile time check that should be an expected value.
-pub trait Expected<const VALUE: bool> {}
-
-pub struct HasPadding<T: ?Sized, const VALUE: bool>(PhantomData<T>);
-
-impl<T: ?Sized, const VALUE: bool> Expected<VALUE> for HasPadding<T, VALUE> {}
-
-/// Returns true iff the struct or union does not contain any padding bytes.
-///
-/// `$ts` is the list of the type of every field in `$t`. `$t` must be a
-/// struct type, or else `struct_has_padding!`'s result may be meaningless.
-///
-/// Note that `struct_has_padding!`'s results are independent of `repr` since
-/// they only consider the size of the type and the sizes of the fields.
-/// Whatever the repr, the size of the type already takes into account any
-/// padding that the compiler has decided to add. Structs with well-defined
-/// representations (such as `repr(C)`) can use this macro to check for padding.
-/// Note that while this may yield some consistent value for some `repr(Rust)`
-/// structs, it is not guaranteed across platforms or compilations.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! is_without_padding {
-    (union -> $container:ty, $($fields:ty),*) => {
-        false $(|| ::core::mem::size_of::<$container>() != ::core::mem::size_of::<$fields>())*
-    };
-    (struct -> $container:ty, $($fields:ty),*) => {
-        ::core::mem::size_of::<$container>() > 0 $(+ ::core::mem::size_of::<$fields>())*
-    };
-}
-
-#[macro_export]
-macro_rules! offset_of {
-    ($ty:ty, $field:ident) => {{
-        // Create an instance of the type
-        let instance = unsafe { ::core::mem::zeroed::<$ty>() };
-
-        // Get the address of the field
-        let field_ptr: *const _ = &instance.$field;
-
-        // Get the address of the instance
-        let instance_ptr: *const _ = &instance;
-
-        // Calculate the offset as the difference between the two addresses
-        let offset_bytes = field_ptr as usize - instance_ptr as usize;
-
-        offset_bytes
-    }};
-}
-
-#[doc(hidden)]
-pub trait FromInner<T> {
-    fn from_inner(inner: T) -> Self;
-}
-
-#[doc(hidden)]
-pub trait AsInner<T> {
-    fn as_inner(&self) -> &T;
-}
-
-#[doc(hidden)]
-pub trait AsInnerMut<T> {
-    fn as_inner_mut(&mut self) -> &mut T;
 }
 
 #[doc(hidden)]
 pub trait IntoInner<T> {
     fn into_inner(self) -> T;
+}
+
+#[doc(hidden)]
+pub trait AsInner<T: ?Sized> {
+    fn as_inner(&self) -> &T;
+}
+
+#[doc(hidden)]
+pub trait AsInnerMut<T: ?Sized> {
+    fn as_inner_mut(&mut self) -> &mut T;
+}
+
+#[doc(hidden)]
+pub trait FromInner<T: ?Sized> {
+    fn from_inner(inner: T) -> Self;
+}
+
+#[doc(hidden)]
+pub trait FromInnerMut<T: ?Sized> {
+    fn from_inner_mut(inner: &mut T) -> &mut Self;
+}
+
+#[doc(hidden)]
+pub trait FromInnerRef<T: ?Sized> {
+    fn from_inner_ref(inner: &T) -> &Self;
 }
