@@ -1,6 +1,6 @@
 [package]
 name = "abio"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = """
 Safe abstractions for interfacing with the native operating system ABI.
@@ -13,6 +13,7 @@ categories = ["encoding", "no-std", "development-tools::ffi"]
 [lib]
 name = "abio"
 crate-type = ["lib"]
+path = "src/lib.rs"
 
 [[bin]]
 name = "abio"
@@ -22,12 +23,9 @@ path = "main.rs"
 default = ["derive"]
 derive = ["abio_derive"]
 std = []
-prelude = []
-# byte-pattern = ["memchr"]
 
 [dependencies]
 abio_derive = { version = "0.1.1", path = "derive", optional = true }
-memchr = { version = "2.5.0", default-features = false }
 
 [dev-dependencies]
 getrandom = "0.2.10"
@@ -49,3 +47,6 @@ debug = 0
 debug-assertions = false
 strip = true
 lto = true
+
+[build-dependencies]
+autocfg = "1.1.0"

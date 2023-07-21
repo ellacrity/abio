@@ -1,46 +1,29 @@
 //! [`abio`][abio] is a low-level crate for performing endian-aware operations
 //! on raw byte slices, converting to and from concrete types using zero-copy
-//! serialization and deserialization routines. This crate is an implementation of
-//! "safe transmute".
+//! serialization and deserialization routines. This crate is an attempt at
+//! implementing ["safe transmute"][safe-transmute].
 //!
-//! # Alignment
-//!
-//! Unless otherwise specified, it should be assumed that alignment will be checked
-//! and that aligned reads will be used to access the underlying data.
+//! This project is currently under active development and there are expected to be
+//! many breaking changes while trying to stabilize the project as quickly as
+//! possible.
 //!
 //! [abio]: https://docs.rs/abio/latest/src/abio
+//! [safe-transmute]: https://rust-lang.github.io/rfcs/2835-project-safe-transmute.html
 #![no_std]
-#![feature(
-    try_trait_v2,
-    // ISSUE (1): Remove unstable features that are due to be stabilized.
-    maybe_uninit_uninit_array, 
-    // ISSUE (1): Remove unstable features that are due to be stabilized.
-    maybe_uninit_array_assume_init,
-    // ISSUE (1): Remove unstable features that are due to be stabilized.
-    slice_first_last_chunk,
-    // Actively opting in to the "Strict Provenance" experiment
-    strict_provenance,
-)]
+#![feature(strict_provenance)]
 
-mod bytes;
+pub mod bytes;
 pub use bytes::Bytes;
 
-mod integral;
-pub use integral::{Integral};
-pub use integral::aligned::*;
+pub mod integer;
+pub use integer::Integer;
 
-#[cfg(feature = "prelude")]
-pub mod prelude {
-    pub use crate::integral::signed::{I128, I16, I32, I64, I8};
-    pub use crate::integral::unsigned::{U128, U16, U32, U64, U8};
-}
-#[cfg(feature = "prelude")]
-pub use prelude::*;
+mod layout;
+pub use layout::dec::Decode;
+pub use layout::{endian, Abi, AsBytes, Zeroable};
 
-pub mod abi;
-pub use abi::{Abi,  Deserialize, Source, Zeroable, Deserializer, LittleEndian, BigEndian, LE, BE};
-
-mod types;
+mod contiguous;
+pub use contiguous::{Array, Chunk, Source, Span};
 
 mod error;
 pub use error::{Error, Result};
@@ -48,5 +31,6 @@ pub use error::{Error, Result};
 #[doc(hidden)]
 mod util;
 
+// Enable traits to be derived if the `derived` feature is enabled
 #[cfg(feature = "derive")]
-pub use abio_derive::{Abi, Decode, Source, Zeroable};
+pub use abio_derive::{Abi, AsBytes, Decode, Zeroable};

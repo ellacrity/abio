@@ -1,10 +1,9 @@
-//! This module contains traits that define a consistent ABI compatible with
-//! "system".
+//! This module contains traits that define abstractions for this crate's ABI.
 //!
 //! # Type Layout
 //!
 //! The ABI (Application Binary Interface) is based on a combination of the
-//! `#[repr(C)]`, `#[repr(transparent)]` and `#[repr(aligned($i))]` layout
+//! `#[repr(C)]`, `#[repr(transparent)]` and `#[repr(aligned(int))]` layout
 //! attributes.memory layout representation. This makes the ABI predictable, relative
 //! simple and straightforward to define.
 //!
@@ -16,20 +15,23 @@
 //! abstraction means that little to no runtime costs are incurred as a result of
 //! using this crate.
 //!
-//! # Automatic Implementation
+//! # Derive
 //!
 //! It is strongly recommended that you use the `derive` macros included in the
 //! `abio_derive` sister crate to validate the layout of your types at compile
 //! time. Relying on runtime checks is more error-prone and does not provide the same
 //! safety guarantees available when deriving the traits for your types.
 
+pub mod abi;
+pub use abi::Abi;
+
+mod as_bytes;
+pub use as_bytes::AsBytes;
+
+pub mod dec;
+pub use dec::Decode;
+
+pub mod endian;
+
 mod zeroable;
 pub use zeroable::Zeroable;
-
-mod codec;
-pub use codec::endian::{BigEndian, ByteOrder, Deserializer, LittleEndian, BE, LE};
-
-mod internal;
-
-pub use codec::{ByteChunk, BytesOf, Chunk, Deserialize, Source};
-pub use internal::Abi;

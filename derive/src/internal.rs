@@ -8,15 +8,16 @@ use syn::parse::{Nothing, Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parenthesized, parse_macro_input, token, Abi, AngleBracketedGenericArguments, AttrStyle,
-    Attribute, Data, DataStruct, DataUnion, DeriveInput, Error, Expr, Field, Fields, Generics,
-    Meta, Path, Result, Token, Type, Visibility,
+    parenthesized, parse_macro_input, parse_quote, token, AngleBracketedGenericArguments,
+    AttrStyle, Attribute, Data, DataStruct, DataUnion, DeriveInput, Error, Expr, Field, Fields,
+    Generics, ImplGenerics, Meta, Path, Result, Token, Type, TypeGenerics, Visibility, WhereClause,
 };
+use virtue::prelude::*;
 
-pub trait MarkerTrait {
+pub trait Derive {
     /// Fully-qualified identifier emitted as a derived trait for the type.
-    fn ident(input: &DeriveInput) -> Result<syn::Path>;
-    /// Whether the type fulfills the contract of the [`MarkerTrait`].
+    fn ident(input: &DeriveInput) -> syn::Path;
+
     fn fulfills_contract() -> Option<TokenStream> {
         None
     }
@@ -26,6 +27,8 @@ pub trait MarkerTrait {
     fn asserts(_input: &DeriveInput) -> Result<TokenStream> {
         Ok(quote!())
     }
+    /// Whether the type's attributes are valid and fulfill the contract for this
+    /// trait.
     fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
         Ok(())
     }
@@ -37,17 +40,11 @@ pub trait MarkerTrait {
     }
 }
 
-trait Compatible {
-    fn ident(input: &DeriveInput) -> Result<syn::Path>;
+pub struct Abi;
 
-    fn check_repr(input: &DeriveInput) -> Result<()>;
-}
-
-pub struct AbiMarker;
-
-impl MarkerTrait for AbiMarker {
-    fn ident(_: &DeriveInput) -> Result<syn::Path> {
-        Ok(syn::parse_quote!(::abio::abi::Abi))
+impl Derive for Abi {
+    fn ident(_: &DeriveInput) -> syn::Path {
+        syn::parse_quote!(::abio::Abi)
     }
 
     fn asserts(input: &DeriveInput) -> Result<TokenStream> {
@@ -61,11 +58,7 @@ impl MarkerTrait for AbiMarker {
                         .params
                         .first()
                         .expect("AST parser cannot get first generic parameter."),
-                    "
-                The Abi trait cannot be derived for non-packed types containing generic parameters
-                because the padding requirements cannot be verified. Because of this, there is no
-                way to ensure ABI-compatibility.
-                ",
+                    include_str!("../docs/incompatible.doc"),
                 );
             }
 
@@ -78,7 +71,7 @@ impl MarkerTrait for AbiMarker {
                         None
                     };
 
-                    let path = Self::ident(input)?;
+                    let path = Self::ident(input);
                     let assert_fields_are_abi_compat = generate_fields_are_trait(input, path)?;
 
                     Ok(quote! {
@@ -120,13 +113,13 @@ impl MarkerTrait for AbiMarker {
     }
 }
 
-pub struct DecodeImpl;
+pub struct Decoder;
 
-pub struct SourceImpl;
+pub struct AsBytes;
 
-impl MarkerTrait for SourceImpl {
-    fn ident(_input: &DeriveInput) -> Result<syn::Path> {
-        Ok(syn::parse_quote!(::abio::abi::Parse))
+impl Derive for AsBytes {
+    fn ident(_input: &DeriveInput) -> syn::Path {
+        parse_quote!(::abio::AsBytes)
     }
 
     fn fulfills_contract() -> Option<TokenStream> {
@@ -154,11 +147,11 @@ impl MarkerTrait for SourceImpl {
     }
 }
 
-pub struct ZeroableMarker;
+pub struct Zeroable;
 
-impl MarkerTrait for ZeroableMarker {
-    fn ident(_input: &DeriveInput) -> Result<syn::Path> {
-        Ok(syn::parse_quote!(::abio::abi::Zeroable))
+impl Derive for Zeroable {
+    fn ident(_input: &DeriveInput) -> syn::Path {
+        syn::parse_quote!(::abio::Zeroable)
     }
 
     fn is_unsafe(_input: &DeriveInput) -> bool {

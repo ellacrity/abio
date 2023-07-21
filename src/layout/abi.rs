@@ -6,34 +6,40 @@ use core::num::{
     NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
 };
 
-use crate::integral::aligned::*;
+use crate::integer::*;
+use crate::{Chunk, Zeroable};
 
-/// Core marker trait that all eligible types must implement to ensure their
-/// compatibility with the operating system ABI. The default for every platform is
-/// its "native" C ABI.
+/// A trait that a type must implement to be considered compatible with the
+/// [`ABI`][ABI].
+///
+/// # Restrictions
+///
+/// This trait is extremely restrictive, because it carries with it many guarantees.
+/// It also forbits the construction of types that are not compatible with the ABI.
+/// Blanket implementations are provided for common types to ensure that you do not
+/// have to write your own boilerplate code to support built-in primitives, such as
+/// [`Integer`] types.
+///
+/// Notable restrictions include:
+/// * Your type must be `Sized + Copy`
+/// * Your type may not contain immutable or mutable references types
+/// * Types with a `'static` lifetime are supported and considered legal
 ///
 /// # Derive
 ///
 /// You are strongly encouraged to use the procedural derive macro to implement this
-/// trait for your type. The macro will parse your type's syntax tree and verify its
-/// layout, such as the size and alignment of its fields, and the existence or lack
-/// of padding bytes. Padding bytes are currently not allowed.
+/// trait for your type. The macro inspects your code at compile time, ensuring that
+/// each field is `Abi`. This crate attempts to use zero-cost abstractions whenever
+/// possible, so that checks can be moved to compile time rather than runtime to
+/// reduce the error-prone process of manually implementing `unsafe` traits.
 ///
-/// # Soundness
-///
-/// This trait declares that the implementor is 100% safe to construct and is
-/// compatible with the ABI existing in its environment. allows for certain
-/// superpowers, such as zero-copy serialization and deserialization. If the byte
-/// order serialization is not known until runtime, the caller can use the
-/// [`endian`][endian] module to read and write from arbitrary bytes using
-/// endian-specific instructions.
-///
-/// to read and write from bytes in an
-/// endian-agnostic way. eto  within the bounds of this crate, is to guarantee that
-/// the type is completely safe to construct within the current environment.
-///
-/// You should annotate your type with `#[derive(Abi)]`, which will ensure that
-/// your type is compatible with the methods contained in the [`abio`] crate.
+/// Deriving the [`Abi`] trait for your type ensures that your type:
+/// * is fully compatible with the ABI defined by this crate
+/// * is fundamentally sound at the type level, and it may be intepreted directly
+///   from raw bytes
+/// * has known size and alignment requirements, including its individual fields;
+///   each field must implement ABI
+/// * contains no padding bytes. Padding bytes are currently **not allowed**.
 ///
 /// # Safety
 ///
@@ -78,6 +84,7 @@ pub unsafe trait Abi: Sized + Copy + 'static {
         align_of_val(self)
     }
 
+    /// Returns the size of the pointed-to value in bytes.
     #[inline]
     fn runtime_size(&self) -> usize {
         size_of_val(self)
@@ -85,7 +92,7 @@ pub unsafe trait Abi: Sized + Copy + 'static {
 }
 
 // const-generics are supported for all array types `[T; N] where T: Abi`.
-unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi {}
+unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi + Zeroable {}
 
 macro_rules! impl_abi_for_primitives {
     ($($ty:ty),* $(,)?) => {
@@ -101,5 +108,9 @@ impl_abi_for_primitives!(U8, U16, U32, U64, U128, USize, I8, I16, I32, I64, I128
 impl_abi_for_primitives!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize);
 impl_abi_for_primitives!(NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128, NonZeroIsize);
 
+// FIXME: Test that this is actually sound, because it may not be within the bounds
+// of this crate. (ellacrity)
 unsafe impl<T: Abi> Abi for *const T {}
 unsafe impl<T: Abi> Abi for *mut T {}
+
+unsafe impl<const N: usize> Abi for Chunk<N> {}

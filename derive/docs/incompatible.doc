@@ -1,0 +1,8 @@
+`Abi` trait cannot be derived for array-like types containing generic parameters
+that are not decorated with the `packed` representation attribute.
+
+Padding requirements cannot be verified.
+
+To rectify this problem, you must choose one of the following:
+  - Add the `packed` attribute to your type's `#[repr(...)]` attributes
+  - Remove the generic parameter in favor of a concrete parameter that can be validated at compile time.

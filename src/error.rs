@@ -1,8 +1,8 @@
 //! Common errors that may occur within the [`abio`][abio] crate.
 //!
 //! [abio]: https://docs.rs/abio/latest/abio/
+#![allow(dead_code)]
 
-use core::array::TryFromSliceError;
 use core::fmt;
 
 /// Core error type for the [`abio`][abio] crate.
@@ -16,57 +16,8 @@ pub struct Error {
 
 impl Error {
     /// Creates a new [`Error`] instance from an inner [`ErrorKind`].
-    pub(crate) const fn new(repr: ErrorKind) -> Error {
-        Error { kind: repr }
-    }
-
-    /// The operation caused an attempted memory access that is out of bounds.
-    ///
-    /// The `requested` number of bytes exceeds the `actual` number of available
-    /// bytes. This error frequently appears within operations that require bounds
-    /// checking.
-    pub const fn out_of_bounds(requested: usize, actual: usize) -> Error {
-        Error::new(ErrorKind::out_of_bounds(requested, actual))
-    }
-
-    /// The operation performed on these bytes failed due to the pointer being
-    /// misaligned.
-    pub fn misaligned_access(bytes: &[u8]) -> Error {
-        Error::new(ErrorKind::misaligned_access(bytes))
-    }
-
-    /// The types have sizes that differ in a way that violates a particular
-    /// invariant.
-    ///
-    /// Most operations do not require that `required == actual`. However, all "safe
-    /// transmute" operations assume that `required >= actual`.
-    pub const fn size_mismatch(required: usize, actual: usize) -> Error {
-        Error::new(ErrorKind::size_mismatch(required, actual))
-    }
-
-    /// Returns a detailed error with a message.
-    ///
-    /// This function is particularly useful during debugging, or whenever you wish
-    /// to emit an explicit error message.
-    pub const fn verbose(message: &'static str) -> Error {
-        Error::new(ErrorKind::verbose(message))
-    }
-
-    /// The program entered an unknown or unexpected failure state that cannot be
-    /// recovered from.
-    pub const fn internal_failure() -> Error {
-        Error::new(ErrorKind::internal_failure())
-    }
-
-    /// An operation was performed that resulted in an error due to the types being
-    /// incompatible. The most likely cause of this error is that the two types have
-    /// incompatible layouts, such as different size or alignment requirements.
-    pub const fn incompatible_types() -> Error {
-        Error::new(ErrorKind::incompatible_types())
-    }
-
-    pub fn null_reference<T: ?Sized>(ptr: *const T) -> Error {
-        Error::new(ErrorKind::null_reference(ptr))
+    pub(crate) const fn new(kind: ErrorKind) -> Error {
+        Error { kind }
     }
 }
 
@@ -76,9 +27,15 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl From<TryFromSliceError> for Error {
-    fn from(_: TryFromSliceError) -> Error {
+impl From<core::array::TryFromSliceError> for Error {
+    fn from(_: core::array::TryFromSliceError) -> Error {
         Error::incompatible_types()
+    }
+}
+
+impl From<core::convert::Infallible> for Error {
+    fn from(_: core::convert::Infallible) -> Error {
+        Error::internal_failure()
     }
 }
 
@@ -88,79 +45,113 @@ impl From<&'static str> for Error {
     }
 }
 
+#[cfg(target_feature = "std")]
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Error::new(ErrorKind::Syscall { err: value })
+    }
+}
+
+#[cfg(target_feature = "std")]
+impl std::error::Error for Error {}
+
 /// Error variant, or kind, used to more precisely represent the failure condition.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) enum ErrorKind {
-    /// Error originating from an operation that caused the buffer to overflow.
-    OutOfBounds {
-        /// Number of bytes needed for the operation.
-        required: usize,
-        /// Upper bound of the buffer.
-        actual: usize,
+    /// Error caused by a decoding routine failure.
+    DecodeFailure {
+        /// Message explaining why the decoding routine failed.
+        message: &'static str,
     },
+    /// Error caused by an encoding routine failure.
+    EncodeFailure {
+        /// Message explaining why the encoding routine failed.
+        message: &'static str,
+    },
+    /// Error caused by a failed conversion attempt due to the types having
+    /// incompatible layouts.
+    IncompatibleTypes,
     /// Error caused by an invalid operation attempting to access memory without
     /// first aligning the pointer accessing the underlying data.
     MisalignedAccess {
         /// Address where the memory access occurred.
         address: usize,
     },
-    /// Error caused by a failed conversion attempt due to the types having
-    /// incompatible layouts.
-    IncompatibleTypes,
     /// Error caused by an invalid pointer that dereferences to null.
     NullReference { address: usize },
-    /// Error occurring when the source and destination types occupy, or represent,
-    /// memory regions with different sizes.
+    /// Error originating from an operation that caused an attempted memory access
+    /// outside the bounds of a slice or array.
+    OutOfBounds {
+        /// Number of bytes needed for the operation.
+        minimum: usize,
+        /// Actual number of available bytes.
+        available: usize,
+    },
+    /// Error occurring when the the sizes of two types, or regions of memory, do not
+    /// have the same exact size.
+    ///
+    /// For source and destination types represent different sizes.
     SizeMismatch {
-        /// Required number of bytes needed to decode the target type.
-        required: usize,
+        /// Expected, or required, number of bytes needed to fit an instance of the
+        /// target type.
+        expected: usize,
         /// Actual number of available bytes in the buffer.
         actual: usize,
     },
+    /// Error with an unknown or unexpected origin.
+    #[default]
+    InternalFailure,
     /// Error with a detailed message meant for debugging purposes.
     Verbose {
         /// Detailed error message explaining the failure.
         message: &'static str,
     },
-    /// Error with an unknown or unexpected origin.
-    #[default]
-    InternalFailure,
+    #[cfg(target_feature = "std")]
+    Syscall { err: std::io::Error },
 }
 
-impl ErrorKind {
-    const fn out_of_bounds(required: usize, actual: usize) -> Self {
-        ErrorKind::OutOfBounds { required, actual }
+impl Error {
+    pub(crate) const fn decode_failed(message: &'static str) -> Error {
+        Error::new(ErrorKind::DecodeFailure { message })
     }
 
-    fn misaligned_access(bytes: &[u8]) -> Self {
-        ErrorKind::MisalignedAccess { address: bytes.as_ptr().addr() }
+    pub(crate) const fn encode_failed(message: &'static str) -> Error {
+        Error::new(ErrorKind::EncodeFailure { message })
     }
 
-    const fn size_mismatch(required: usize, actual: usize) -> Self {
-        ErrorKind::SizeMismatch { required, actual }
+    pub(crate) const fn out_of_bounds(minimum: usize, available: usize) -> Error {
+        Error::new(ErrorKind::OutOfBounds { minimum, available })
     }
 
-    const fn verbose(message: &'static str) -> Self {
-        ErrorKind::Verbose { message }
+    pub(crate) fn misaligned_access(bytes: &[u8]) -> Error {
+        Error::new(ErrorKind::MisalignedAccess { address: bytes.as_ptr().addr() })
     }
 
-    const fn internal_failure() -> Self {
-        ErrorKind::InternalFailure
+    pub(crate) const fn size_mismatch(expected: usize, actual: usize) -> Error {
+        Error::new(ErrorKind::SizeMismatch { expected, actual })
     }
 
-    const fn incompatible_types() -> ErrorKind {
-        ErrorKind::IncompatibleTypes
+    pub(crate) const fn internal_failure() -> Error {
+        Error::new(ErrorKind::InternalFailure)
     }
 
-    fn null_reference<T: ?Sized>(ptr: *const T) -> ErrorKind {
-        ErrorKind::NullReference { address: ptr.addr() }
+    pub(crate) const fn incompatible_types() -> Error {
+        Error::new(ErrorKind::IncompatibleTypes)
+    }
+
+    pub(crate) fn null_reference<T: ?Sized>(ptr: *const T) -> Error {
+        Error::new(ErrorKind::NullReference { address: ptr.addr() })
+    }
+
+    pub(crate) const fn verbose(message: &'static str) -> Error {
+        Error::new(ErrorKind::Verbose { message })
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            ErrorKind::OutOfBounds { required, actual } => {
+            ErrorKind::OutOfBounds { minimum: required, available: actual } => {
                 write!(f, "Out of bounds error. Required {required} bytes, but buffer size can only hold {actual} bytes.")
             }
             ErrorKind::IncompatibleTypes => {
@@ -179,10 +170,12 @@ impl fmt::Display for Error {
                     "Invalid pointer dereferenced to null at address: {address} ({address:p})",
                 )
             }
-            ErrorKind::SizeMismatch { required, actual } => {
+            ErrorKind::SizeMismatch { expected: required, actual } => {
                 write!(f, "Size mismatch error. Required {required} bytes, got {actual}.")
             }
             ErrorKind::Verbose { message } => write!(f, "[ERROR]: {message}"),
+            ErrorKind::DecodeFailure { message } => write!(f, "Decode failed: {message}"),
+            ErrorKind::EncodeFailure { message } => write!(f, "Encode failed: {message}"),
         }
     }
 }
