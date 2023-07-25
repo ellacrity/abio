@@ -13,9 +13,12 @@ newline_style = "Unix"
 
 # The "Default" setting has a heuristic which splits lines too aggresively.
 use_small_heuristics = "Max"
+struct_lit_width = 60
+struct_variant_width = 60
+single_line_if_else_max_width = 70
 
 # Consistent imports ordering
-imports_granularity = "Module"
+imports_granularity = "Preserve"
 group_imports = "StdExternalCrate"
 
 # Reorder trait implementations for consistency.

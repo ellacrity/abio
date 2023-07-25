@@ -6,12 +6,12 @@
 //! capacity, of its underlying backing buffer. This allows the compiler to make more
 //! aggressive optimizations, since the size of the slice is explicit.
 
+use core::ops::Deref;
 use core::slice;
 
-use crate::bytes::Bytes;
-use crate::contiguous::{Array, Source, Span};
-use crate::layout::AsBytes;
-use crate::{Abi, Error, Integer, Result};
+use crate::contiguous::{Bytes, Source, Span};
+use crate::layout::BytesOf;
+use crate::{shims, Abi, Array, Decode, Error, Integer, Result};
 
 /// A contiguous region of memory with a fixed size.
 ///
@@ -35,6 +35,7 @@ pub struct Chunk<const N: usize> {
 
 impl<const N: usize> Chunk<N> {
     /// Creates a new [`Chunk`] from an array of bytes with length `N`.
+    #[inline(always)]
     pub const fn new(chunk: [u8; N]) -> Self {
         debug_assert!(!chunk.is_empty(), "Chunk types cannot represent ZST's");
         Self { inner: chunk }
@@ -46,21 +47,7 @@ impl<const N: usize> Chunk<N> {
     /// fails.
     #[inline]
     pub const fn from_bytes(bytes: &[u8]) -> Result<Chunk<N>> {
-        if bytes.len() < N {
-            return Err(Error::out_of_bounds(N, bytes.len()));
-        }
-
-        // SAFETY: The array bytes consist of valid bytes within the bounds of the slice.
-        // Again, `Chunk` has no alignment requirements (its alignment is 1), so it is safe
-        // to read here.
-        unsafe {
-            let spanned = slice::from_raw_parts(bytes.as_ptr(), N);
-            if spanned.len() != N {
-                Err(Error::size_mismatch(N, spanned.len()))
-            } else {
-                Ok(spanned.as_ptr().cast::<Self>().read())
-            }
-        }
+        read_chunk_at_inner::<N>(bytes, 0)
     }
 
     /// Creates a new [`Chunk`] instance with length `N` from a bytes slice, starting
@@ -70,21 +57,7 @@ impl<const N: usize> Chunk<N> {
     /// to array fails.
     #[inline]
     pub const fn from_bytes_at(bytes: &[u8], offset: usize) -> Result<Chunk<N>> {
-        if bytes.len() < offset + N {
-            return Err(Error::out_of_bounds(offset + N, bytes.len()));
-        }
-
-        // SAFETY: We have already performed bounds checking, and `Chunk` has no alignment
-        // requirements.
-        unsafe {
-            let spanned = slice::from_raw_parts(bytes.as_ptr().add(offset), N);
-            if spanned.len() != N {
-                // panic!("Cannot construct Chunk<N> from byte span of wrong length");
-                Err(Error::size_mismatch(N, spanned.len()))
-            } else {
-                Ok(spanned.as_ptr().cast::<Self>().read())
-            }
-        }
+        read_chunk_at_inner::<N>(bytes, offset)
     }
 
     /// Gets a pointer to the first byte of this chunk, returning a `*const u8`.
@@ -96,7 +69,7 @@ impl<const N: usize> Chunk<N> {
     /// Returns the number of bytes in the chunk.
     #[inline]
     pub const fn len(&self) -> usize {
-        const_min_value(self.inner.len(), N)
+        shims::const_min_value(self.inner.len(), N)
     }
 
     /// Returns `true` if the chunk has a length of 0.
@@ -123,8 +96,16 @@ impl<const N: usize> Chunk<N> {
     }
 
     #[inline]
-    pub const fn as_slice(&self) -> &[u8] {
+    pub const fn as_bytes(&self) -> &[u8] {
         &self.inner
+    }
+
+    pub const fn as_str(&self) -> Option<&str> {
+        if let Ok(utf8) = core::str::from_utf8(self.as_bytes()) {
+            Some(utf8)
+        } else {
+            None
+        }
     }
 
     /// Returns a pointer to this chunk offset by `count` bytes.
@@ -137,32 +118,74 @@ impl<const N: usize> Chunk<N> {
     pub const unsafe fn as_ptr_offset(&self, count: usize) -> *const u8 {
         self.as_ptr().add(count)
     }
-}
 
-/// Compares and returns the minimum of two values in a `const` context.
-pub const fn const_min_value(a: usize, b: usize) -> usize {
-    if a < b {
-        a
-    } else {
-        b
+    /// Returns this chunk of bytes interpreted as some type `T` where `T: Abi`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `self` is properly aligned and the bytes
+    /// representing `self` have the same size as `T`.
+    #[inline(always)]
+    pub const unsafe fn read<T: Abi>(&self) -> T {
+        unsafe { self.as_ptr().cast::<T>().read() }
     }
 }
 
-impl<'source, const N: usize> Array<'source, N> for Chunk<N> {
+#[inline]
+const fn read_chunk_at_inner<const N: usize>(bytes: &[u8], offset: usize) -> Result<Chunk<N>> {
+    if bytes.len() < offset + N {
+        return Err(Error::out_of_bounds(offset + N, bytes.len()));
+    }
+
+    //       SAFETY: The array bytes consist of valid bytes within the bounds of the
+    // slice.       Again, `Chunk` has no alignment requirements (its alignment is
+    // 1), so it is safe    to read here.
+    unsafe {
+        let bytes = slice::from_raw_parts(bytes.as_ptr(), N);
+        if bytes.len() != N {
+            Err(Error::size_mismatch(N, bytes.len()))
+        } else {
+            Ok(bytes.as_ptr().cast::<Chunk<N>>().read())
+        }
+    }
+
+    // SAFETY: Bounds checks above prove that `bytes.len() >= offset + N`.
+    // Chunk::
+    // let bytes = unsafe { slice::from_raw_parts(bytes.as_ptr().add(offset), N) };
+    // if bytes.len() != N {
+    //     Err(Error::size_mismatch(N, bytes.len()))
+    // } else if let Ok(array) = bytes.try_into() {
+    //     Ok(Chunk::from_array(array))
+    // } else {
+    //     Err(Error::size_mismatch(N, bytes.len()))
+    // }
+}
+
+impl<const N: usize> Array<N> for Chunk<N> {
+    #[inline]
     fn from_ptr<T: Abi>(ptr: *const T) -> Result<Self> {
         let ptr = ptr.cast::<[u8; N]>();
         let slice = unsafe { slice::from_raw_parts(ptr.cast::<u8>(), N) };
         Chunk::from_bytes(slice)
     }
 
+    #[inline]
     fn from_integer<I: Integer>(integer: I) -> Result<Self> {
-        Chunk::<N>::from_bytes(integer.as_bytes())
+        read_chunk_at_inner::<N>(integer.bytes_of(), 0)
     }
 }
 
 impl<const N: usize> AsRef<[u8]> for Chunk<N> {
     fn as_ref(&self) -> &[u8] {
-        self.as_slice()
+        self.as_bytes()
+    }
+}
+
+impl<const N: usize> Deref for Chunk<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_bytes()
     }
 }
 
@@ -176,17 +199,24 @@ impl<'src, const N: usize> TryFrom<&'src [u8]> for Chunk<N> {
     type Error = crate::Error;
 
     fn try_from(bytes: &'src [u8]) -> Result<Self, Self::Error> {
-        Chunk::from_bytes(bytes)
+        Chunk::<N>::from_bytes(bytes)
     }
 }
 
-impl<'src, const N: usize> From<Bytes<'src>> for Result<Chunk<N>> {
-    fn from(bytes: Bytes<'src>) -> Result<Chunk<N>> {
-        Chunk::from_bytes(bytes.as_slice())
+impl<'src, const N: usize> From<&'src Bytes> for Result<Chunk<N>> {
+    fn from(bytes: &'src Bytes) -> Result<Chunk<N>> {
+        Chunk::<N>::from_bytes(bytes.as_slice())
+    }
+}
+
+impl<'a, const N: usize> From<&'a Bytes> for Option<Chunk<N>> {
+    fn from(value: &'a Bytes) -> Option<Chunk<N>> {
+        shims::first_chunk(value.as_slice()).ok()
     }
 }
 
 unsafe impl<const N: usize> Source for Chunk<N> {
+    type Array<const LEN: usize> = Chunk<LEN>;
     type Slice = [u8];
 
     #[inline]
@@ -195,7 +225,7 @@ unsafe impl<const N: usize> Source for Chunk<N> {
     }
 
     #[inline]
-    fn read_slice(&self, offset: usize, size: usize) -> Result<(&Self::Slice, &[u8])> {
+    fn read_slice_at(&self, offset: usize, size: usize) -> Result<&Self::Slice> {
         let span = Span::new(offset, size);
         if self.source_len() < span.size() {
             Err(Error::out_of_bounds(span.size(), self.source_len()))
@@ -203,33 +233,62 @@ unsafe impl<const N: usize> Source for Chunk<N> {
             // SAFETY: `span.start()` is within ounds of `self`, so we havew a valid pointer to
             // this location. The resulting `bytes` slice uses this validated pointer and adjusts
             // the length to a value that is known to be within bounds.
-            let bytes = unsafe {
+            unsafe {
                 let data = self.as_ptr_offset(span.start());
-                slice::from_raw_parts(data, self.source_len() - span.start())
-            };
-            Ok(bytes.split_at(span.size()))
+                Ok(slice::from_raw_parts(data, self.source_len() - span.start()))
+            }
         }
     }
 
     #[inline]
-    fn read_array<'data, const SIZE: usize, A: Array<'data, SIZE>>(
-        &self,
-        offset: usize,
-    ) -> Result<(A, &[u8])> {
-        let span = Span::new(offset, SIZE);
+    fn read_chunk_at<const LEN: usize>(&self, offset: usize) -> Result<Self::Array<LEN>> {
+        Chunk::<LEN>::from_bytes_at(self.as_bytes(), offset)
+    }
+
+    fn read_slice(&self, size: usize) -> Result<&Self::Slice> {
+        let span = Span::new(0, size);
         if self.source_len() < span.size() {
             return Err(Error::out_of_bounds(span.size(), self.source_len()));
         }
+        // SAFETY: `span.start()` is within ounds of `self`, so we havew a valid pointer to
+        // this location. The resulting `bytes` slice uses this validated pointer and adjusts
+        // the length to a value that is known to be within bounds.
+        unsafe {
+            let data = self.as_ptr_offset(span.start());
+            Ok(slice::from_raw_parts(data, self.source_len() - span.start()))
+        }
+    }
 
-        let (head, tail) = self.as_bytes().split_at(offset);
-        debug_assert!(head.len() == offset);
-        debug_assert_eq!(tail[..SIZE].len(), A::SIZE);
-        debug_assert_eq!(tail[..SIZE].len(), span.size());
+    fn read_chunk<const LEN: usize>(&self) -> Result<Self::Array<LEN>> {
+        Chunk::from_bytes(self.as_bytes())
+    }
+}
 
-        // SAFETY: The span above verifies that we have at least enough bytes to decode an
-        // array of length `SIZE`.
-        let head = &tail[..SIZE];
-        let head = unsafe { head.as_ptr().cast::<A>().read() };
-        Ok((head, tail))
+impl Decode for u8 {
+    fn decode<U: Abi>(bytes: &[u8]) -> Result<U> {
+        match bytes.read_slice(U::SIZE) {
+            Ok(bytes) => {
+                if !bytes.is_aligned_with::<U>() {
+                    Err(Error::misaligned_access(bytes.bytes_of()))
+                } else {
+                    Ok(unsafe { bytes.as_ptr().cast::<U>().read() })
+                }
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
+
+impl Decode for u16 {
+    fn decode<T: Abi, const N: usize>(chunk: Chunk<N>) -> Result<T> {
+        // comparing to an associated const so are optimized away.
+        if chunk.size() != T::SIZE || Self::SIZE != T::SIZE {
+            return Err(Error::size_mismatch(Self::SIZE, chunk.size()));
+        } else if !chunk.is_aligned_with::<T>() {
+            return Err(Error::misaligned_access(chunk.as_bytes()));
+        } else {
+            // got a chunk with same size and alignment as `Self` so read ptr.
+            Ok(unsafe { (*chunk).read::<T>() })
+        }
     }
 }

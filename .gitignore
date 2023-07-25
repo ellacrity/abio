@@ -10,6 +10,7 @@ spec/
 
 # Archived and temporary files
 .archive/
+.backlog/
 .temp/
 
 # IDEs and Editors
@@ -19,3 +20,8 @@ spec/
 
 # Scratch space
 scratch*/
+
+# Environment variables
+*.env
+.envrc
+

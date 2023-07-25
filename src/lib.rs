@@ -10,26 +10,25 @@
 //! [abio]: https://docs.rs/abio/latest/src/abio
 //! [safe-transmute]: https://rust-lang.github.io/rfcs/2835-project-safe-transmute.html
 #![no_std]
-#![feature(strict_provenance)]
-
-pub mod bytes;
-pub use bytes::Bytes;
+#![feature(const_trait_impl, trait_alias, strict_provenance)]
 
 pub mod integer;
-pub use integer::Integer;
+pub use integer::{Integer, NonZeroInteger};
 
 mod layout;
-pub use layout::dec::Decode;
-pub use layout::{endian, Abi, AsBytes, Zeroable};
+pub use layout::decode::Decode;
+pub use layout::{config, Abi, BytesOf, Zeroable};
 
 mod contiguous;
-pub use contiguous::{Array, Chunk, Source, Span};
+pub use contiguous::{Array, Bytes, Chunk, Source, Span};
 
 mod error;
 pub use error::{Error, Result};
 
-#[doc(hidden)]
-mod util;
+#[cfg(feature = "shims")]
+pub mod shims;
+#[cfg(not(feature = "shims"))]
+mod shims;
 
 // Enable traits to be derived if the `derived` feature is enabled
 #[cfg(feature = "derive")]

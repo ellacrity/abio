@@ -33,6 +33,12 @@ impl From<core::array::TryFromSliceError> for Error {
     }
 }
 
+impl From<core::str::Utf8Error> for Error {
+    fn from(_: core::array::TryFromSliceError) -> Error {
+        Error::incompatible_types()
+    }
+}
+
 impl From<core::convert::Infallible> for Error {
     fn from(_: core::convert::Infallible) -> Error {
         Error::internal_failure()
@@ -44,16 +50,6 @@ impl From<&'static str> for Error {
         Error::verbose(message)
     }
 }
-
-#[cfg(target_feature = "std")]
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Error::new(ErrorKind::Syscall { err: value })
-    }
-}
-
-#[cfg(target_feature = "std")]
-impl std::error::Error for Error {}
 
 /// Error variant, or kind, used to more precisely represent the failure condition.
 #[derive(Debug, Default, PartialEq)]
@@ -106,17 +102,15 @@ pub(crate) enum ErrorKind {
         /// Detailed error message explaining the failure.
         message: &'static str,
     },
-    #[cfg(target_feature = "std")]
-    Syscall { err: std::io::Error },
 }
 
 impl Error {
-    pub(crate) const fn decode_failed(message: &'static str) -> Error {
-        Error::new(ErrorKind::DecodeFailure { message })
+    pub(crate) const fn decode_failed() -> Error {
+        Error::new(ErrorKind::DecodeFailure { message: "Decoder failed; cannot write malformed bytes due to size or alignment requirements." })
     }
 
-    pub(crate) const fn encode_failed(message: &'static str) -> Error {
-        Error::new(ErrorKind::EncodeFailure { message })
+    pub(crate) const fn encode_failed() -> Error {
+        Error::new(ErrorKind::EncodeFailure { message: "Encoder failed; cannot write malformed bytes due to size or alignment requirements." })
     }
 
     pub(crate) const fn out_of_bounds(minimum: usize, available: usize) -> Error {

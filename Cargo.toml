@@ -22,7 +22,10 @@ path = "main.rs"
 [features]
 default = ["derive"]
 derive = ["abio_derive"]
-std = []
+alloc = []
+std = ["alloc"]
+# Escape hatches and additional utility methods
+shims = []
 
 [dependencies]
 abio_derive = { version = "0.1.1", path = "derive", optional = true }
@@ -47,6 +50,3 @@ debug = 0
 debug-assertions = false
 strip = true
 lto = true
-
-[build-dependencies]
-autocfg = "1.1.0"

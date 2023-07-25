@@ -1,18 +1,36 @@
-//! Low-level encoding and decoding primitives.
+//! Module for working with contiguous regions of memory.
+//!
+//! These regions may be slices, such as the [`Bytes`] type or they may represent
+//! fixed size data, such as the [`Chunk`] type.
+
+// TODO: Determine whether we want to move this module to its own separate crate. Is
+// it within the scope of this project to provide wrapper types like `Bytes` and
+// `Chunk`? (ellacrity)
 
 use core::fmt::Debug;
+use core::ops::Deref;
 
-use crate::layout::{Abi, AsBytes};
-use crate::Result;
+use crate::layout::{Abi, BytesOf};
+use crate::{shims, Error, Result};
 
 mod array;
 pub use array::Array;
+
+// FIXME: Add support for `BytesMut` and reassess `Bytes` layout (ellacrity).
+mod bytes;
+pub use bytes::Bytes;
+// mod mutable;
+// pub use mutable::BytesMut;
 
 mod chunk;
 pub use chunk::Chunk;
 
 mod span;
 pub use span::Span;
+
+// type ChunkArray<'data, const N: usize> = <Chunk<N> as Source>::Array<'data, N>;
+// type BytesArray<'data, const N: usize> = <&'data Bytes as Source>::Array<'data,
+// N>;
 
 /// Types that represent valid memory for use as an input [`Source`] into the
 /// abstract machine defined by this crate's ABI, or Application Binary Interface.
@@ -55,9 +73,12 @@ pub use span::Span;
 /// time to minimize mistakes at runtime.
 ///
 /// [endian]: crate::endian::Endian
-pub unsafe trait Source: AsBytes {
-    /// The inner type that this [`Source`] can be sliced into.
-    type Slice: ?Sized + Debug + Eq + PartialEq;
+pub unsafe trait Source: BytesOf {
+    /// Dynamically-sized type this [`Source`] can be sliced into.
+    type Slice: ?Sized + Debug + Eq + PartialEq + Source;
+
+    /// Fixed-size type this [`Source`] can be sliced into with a constant size.
+    type Array<const LEN: usize>: Array<LEN>;
 
     /// Gets the pointer to the head of the source bytes, returning a `*const u8`.
     #[inline(always)]
@@ -67,6 +88,10 @@ pub unsafe trait Source: AsBytes {
 
     /// Returns the alignment that must be applied to the pointer to the source bytes
     /// in order to meet the alignment requirements of `T`.
+    ///
+    /// # Algorithm
+    ///
+    /// The algorithm used applies a bitmask
     #[inline]
     fn align_with<T: Abi>(&self) -> usize {
         self.as_ptr().addr() & (T::ALIGN - 1)
@@ -79,14 +104,17 @@ pub unsafe trait Source: AsBytes {
         self.align_with::<T>() == 0
     }
 
-    /// Reads a slice of bytes from this [`Source`], starting at `offset` with
-    /// `size`, in bytes.
+    /// Reads a slice of bytes from this [`Source`], starting at `offset` with the
+    /// specified `size`. The slice is returned along with the remaining [`Source`]
+    /// bytes.
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails due to bounds errors or any other IO
-    /// failure. size or alignment invariants.
-    fn read_slice(&self, offset: usize, size: usize) -> Result<(&Self::Slice, &[u8])>;
+    /// Returns an error if `offset + size` exceeds the number of bytes comprising
+    /// the [`Source`].
+    fn read_slice_at(&self, offset: usize, size: usize) -> Result<&Self::Slice>;
+
+    fn read_slice(&self, size: usize) -> Result<&Self::Slice>;
 
     /// Reads a chunk of bytes into a fixed size array, returning the chunk along
     /// with the remaining [`Source`] bytes.
@@ -98,10 +126,9 @@ pub unsafe trait Source: AsBytes {
     /// This method is the preferred method of reading from the [`Source`] as the
     /// compiler is very good at optimizing operations performed on fixed size chunks
     /// of memory.
-    fn read_array<'data, const SIZE: usize, A: Array<'data, SIZE>>(
-        &self,
-        offset: usize,
-    ) -> Result<(A, &[u8])>;
+    fn read_chunk_at<const LEN: usize>(&self, offset: usize) -> Result<Self::Array<LEN>>;
+
+    fn read_chunk<const LEN: usize>(&self) -> Result<Self::Array<LEN>>;
 
     /// Returns the length of the [`Source`].
     ///
@@ -111,6 +138,7 @@ pub unsafe trait Source: AsBytes {
 }
 
 unsafe impl Source for [u8] {
+    type Array<const N: usize> = Chunk<N>;
     type Slice = [u8];
 
     #[inline]
@@ -119,41 +147,47 @@ unsafe impl Source for [u8] {
     }
 
     #[inline]
-    fn read_slice(&self, offset: usize, size: usize) -> Result<(&Self::Slice, &[u8])> {
-        let span = Span::new(offset, size);
-        if self.source_len() < span.size() {
-            Err(crate::Error::out_of_bounds(span.size(), self.source_len()))
-        } else {
-            // SAFETY: `span.start()` is within ounds of `self`, so we havew a valid pointer to
-            // this location. The resulting `bytes` slice uses this validated pointer and adjusts
-            // the length to a value that is known to be within bounds.
-            let bytes = unsafe {
-                let data = self.as_ptr().add(span.start());
-                core::slice::from_raw_parts(data, self.source_len() - span.start())
-            };
-            Ok(bytes.split_at(span.size()))
-        }
+    fn read_slice_at(&self, offset: usize, size: usize) -> Result<&Self::Slice> {
+        Ok(Bytes::new(self.bytes_of()).read_at(offset, size)?)
     }
 
     #[inline]
-    fn read_array<'data, const SIZE: usize, A: Array<'data, SIZE>>(
-        &self,
-        offset: usize,
-    ) -> Result<(A, &[u8])> {
-        let span = Span::new(offset, SIZE);
-        if self.source_len() < span.size() {
-            return Err(crate::Error::out_of_bounds(span.size(), self.source_len()));
+    fn read_chunk_at<const LEN: usize>(&self, offset: usize) -> Result<Self::Array<LEN>> {
+        let span = Span::new(offset, LEN);
+        let span_size = span.size();
+        debug_assert_eq!(self[..LEN].len(), span_size);
+
+        let source_len = self.source_len();
+        if source_len < span_size {
+            return Err(crate::Error::out_of_bounds(span_size, source_len));
         }
 
-        let (head, tail) = self.as_bytes().split_at(offset);
-        debug_assert!(head.len() == offset);
-        debug_assert_eq!(tail[..SIZE].len(), A::SIZE);
-        debug_assert_eq!(tail[..SIZE].len(), span.size());
+        // SAFETY: `span.start()` is within bounds of the slice, so we have both a valid
+        // pointer to the start of the bytes as well as a valid length.
+        let bytes = unsafe {
+            let data = self.as_ptr().add(span.start());
+            core::slice::from_raw_parts(data, source_len - span.start())
+        };
 
-        // SAFETY: The span above verifies that we have at least enough bytes to decode an
-        // array of length `SIZE`.
-        let head = &tail[..SIZE];
-        let head = unsafe { head.as_ptr().cast::<A>().read() };
-        Ok((head, tail))
+        let Ok(chunk) = Chunk::from_bytes(bytes) else {
+            return Err(Error::size_mismatch(LEN, source_len));
+        };
+
+        debug_assert!(chunk.len() == offset);
+        Ok(chunk)
+    }
+
+    fn read_slice(&self, size: usize) -> Result<&Self::Slice> {
+        match shims::take_slice(self.bytes_of(), size) {
+            Ok(bytes) => Ok(bytes),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn read_chunk<const N: usize>(&self) -> Result<Self::Array<N>> {
+        match shims::first_chunk::<N>(self.bytes_of()) {
+            Ok(chunk) => Ok(chunk),
+            Err(err) => Err(err),
+        }
     }
 }

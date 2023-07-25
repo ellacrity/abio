@@ -6,7 +6,7 @@
 use core::mem::{self};
 use core::slice;
 
-use crate::{Abi, Zeroable};
+use crate::{Bytes, Chunk, Source};
 
 /// Types that can be represented as slices of raw bytes.
 ///
@@ -26,8 +26,8 @@ use crate::{Abi, Zeroable};
 /// Implementors of this trait must ensure that their type fulfills the contract
 /// defined by the trait. You are strongly encouraged to derive this trait for your
 /// type if possible.
-pub unsafe trait AsBytes {
-    fn as_bytes(&self) -> &[u8] {
+pub unsafe trait BytesOf {
+    fn bytes_of(&self) -> &[u8] {
         // We have a reference already, so we know `self` is a valid reference. We can create
         // a pointer to a reference. The size of the slice is determined via the
         // `mem::size_of_val` function to get the number of bytes comprising `Self`.
@@ -37,7 +37,7 @@ pub unsafe trait AsBytes {
         }
     }
 
-    fn as_bytes_mut(&mut self) -> &mut [u8] {
+    fn bytes_of_mut(&mut self) -> &mut [u8] {
         // We have a reference already, so we know `self` is a valid reference. We can create
         // a pointer to a reference. The size of the slice is determined via the
         // `mem::size_of_val` function to get the number of bytes comprising `Self`.
@@ -48,14 +48,33 @@ pub unsafe trait AsBytes {
     }
 }
 
-unsafe impl AsBytes for [u8] {
-    fn as_bytes(&self) -> &[u8] {
+unsafe impl BytesOf for [u8] {
+    fn bytes_of(&self) -> &[u8] {
         self
     }
 
-    fn as_bytes_mut(&mut self) -> &mut [u8] {
+    fn bytes_of_mut(&mut self) -> &mut [u8] {
         self
     }
 }
 
-unsafe impl<T: Abi + Zeroable> AsBytes for T {}
+unsafe impl BytesOf for Bytes {
+    fn bytes_of(&self) -> &[u8] {
+        self.as_slice()
+    }
+
+    fn bytes_of_mut(&mut self) -> &mut [u8] {
+        self.as_mut()
+    }
+}
+
+unsafe impl<const N: usize> BytesOf for Chunk<N> {
+    fn bytes_of(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+    }
+
+    fn bytes_of_mut(&mut self) -> &mut [u8] {
+        let bptr = <*mut Self>::from(self).cast::<u8>();
+        unsafe { slice::from_raw_parts_mut(bptr, self.len()) }
+    }
+}

@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-extern crate proc_macro;
+use core::ops::Range;
 
 use proc_macro::{Delimiter as Delimiter1, TokenStream as TokenStream1, TokenStream as TokenTree1};
 use proc_macro2::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
@@ -12,37 +12,81 @@ use syn::{
     AttrStyle, Attribute, Data, DataStruct, DataUnion, DeriveInput, Error, Expr, Field, Fields,
     Generics, ImplGenerics, Meta, Path, Result, Token, Type, TypeGenerics, Visibility, WhereClause,
 };
-use virtue::prelude::*;
 
-pub trait Derive {
-    /// Fully-qualified identifier emitted as a derived trait for the type.
-    fn ident(input: &DeriveInput) -> syn::Path;
+mod bounds;
 
-    fn fulfills_contract() -> Option<TokenStream> {
-        None
-    }
+pub trait Contract {
     /// Returns true if implementing the trait requires an `unsafe` declaration.
     fn is_unsafe(input: &DeriveInput) -> bool;
-    /// Assertions generated to ensure ABI-compatibilty at compile time.
-    fn asserts(_input: &DeriveInput) -> Result<TokenStream> {
-        Ok(quote!())
-    }
+
     /// Whether the type's attributes are valid and fulfill the contract for this
     /// trait.
     fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
         Ok(())
     }
-    fn trait_impl(_input: &DeriveInput) -> Result<(TokenStream, TokenStream)> {
-        Ok((quote!(), quote!()))
-    }
+
+    /// Returns `true` if the implementation requires a `where` clause.
     fn requires_where_clause() -> bool {
         true
     }
 }
 
-pub struct Abi;
+pub trait Behaviour {
+    fn requires_manual_impl(&self) -> bool;
+}
 
-impl Derive for Abi {
+pub trait Generate: Contract {
+    /// Fully-qualified identifier emitted as a derived trait for the type.
+    fn ident(input: &DeriveInput) -> syn::Path;
+
+    /// Assertions generated to ensure ABI-compatibilty at compile time.
+    fn asserts(_input: &DeriveInput) -> Result<TokenStream> {
+        Ok(quote!())
+    }
+
+    /// Returns the
+    fn fulfills_contract() -> Option<TokenStream> {
+        None
+    }
+
+    /// Emit the source code comprising the trait implementation.
+    fn trait_impl(_input: &DeriveInput) -> Result<(TokenStream, TokenStream)> {
+        Ok((quote!(), quote!()))
+    }
+
+    /// Add a trait marker to the generics if it is not already present
+    fn add_trait_marker(generics: &mut syn::Generics, trait_name: &syn::Path) {
+        // Get each generic type parameter.
+        let type_params = generics
+            .type_params()
+            .map(|param| &param.ident)
+            .inspect(|ident| println!("ident: {ident}"))
+            .map(|param| {
+                parse_quote!(
+                  #param: #trait_name
+                )
+            })
+            .collect::<Vec<syn::WherePredicate>>();
+
+        generics.make_where_clause().predicates.extend(type_params);
+    }
+}
+
+pub struct Abi {
+    stream: Box<&'static DeriveInput>,
+}
+
+impl Contract for Abi {
+    fn is_unsafe(_: &DeriveInput) -> bool {
+        true
+    }
+
+    fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Generate for Abi {
     fn ident(_: &DeriveInput) -> syn::Path {
         syn::parse_quote!(::abio::Abi)
     }
@@ -58,7 +102,7 @@ impl Derive for Abi {
                         .params
                         .first()
                         .expect("AST parser cannot get first generic parameter."),
-                    include_str!("../docs/incompatible.doc"),
+                    include_str!("../docs/derive_abi_message"),
                 );
             }
 
@@ -66,7 +110,7 @@ impl Derive for Abi {
                 Data::Struct(_) => {
                     let assert_no_padding = if !is_valid {
                         // generate code to check for padding
-                        Some(generate_assert_no_padding(input)?)
+                        Some(generate_padding_checks(input)?)
                     } else {
                         None
                     };
@@ -100,26 +144,22 @@ impl Derive for Abi {
         }
     }
 
-    fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
-        Ok(())
-    }
-
     fn trait_impl(_input: &DeriveInput) -> Result<(TokenStream, TokenStream)> {
         Ok((quote!(), quote!()))
     }
+}
 
-    fn is_unsafe(_input: &DeriveInput) -> bool {
-        true
+pub struct Decode;
+
+impl Contract for Decode {
+    fn is_unsafe(_: &DeriveInput) -> bool {
+        false
     }
 }
 
-pub struct Decoder;
-
-pub struct AsBytes;
-
-impl Derive for AsBytes {
-    fn ident(_input: &DeriveInput) -> syn::Path {
-        parse_quote!(::abio::AsBytes)
+impl Generate for Decode {
+    fn ident(_: &DeriveInput) -> syn::Path {
+        parse_quote!(::abio::Decode)
     }
 
     fn fulfills_contract() -> Option<TokenStream> {
@@ -130,32 +170,112 @@ impl Derive for AsBytes {
         Ok(quote!())
     }
 
-    fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
-        Ok(())
-    }
-
     fn trait_impl(_input: &DeriveInput) -> Result<(TokenStream, TokenStream)> {
         Ok((quote!(), quote!()))
+    }
+}
+
+pub struct AsBytes;
+
+impl Contract for AsBytes {
+    fn is_unsafe(_: &DeriveInput) -> bool {
+        true
+    }
+
+    fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
+        Ok(())
     }
 
     fn requires_where_clause() -> bool {
         true
     }
+}
 
-    fn is_unsafe(_input: &DeriveInput) -> bool {
-        false
+impl Generate for AsBytes {
+    fn ident(_input: &DeriveInput) -> syn::Path {
+        parse_quote!(::abio::AsBytes)
+    }
+
+    fn fulfills_contract() -> Option<TokenStream> {
+        None
+    }
+
+    fn asserts(input: &DeriveInput) -> Result<TokenStream> {
+        if let Ok(repr) = parse_repr_attr(&input.attrs) {
+            let is_valid = repr.packed == Some(1) || repr.repr == Repr::Transparent;
+
+            if !is_valid && !input.generics.params.is_empty() {
+                Error::new_spanned(
+                    input
+                        .generics
+                        .params
+                        .first()
+                        .expect("AST parser cannot get first generic parameter."),
+                    include_str!("../docs/derive_as_bytes_message"),
+                );
+            }
+
+            match &input.data {
+                Data::Struct(_) => {
+                    // let assert_no_padding = if !is_valid {
+                    //     // generate code to check for padding
+                    //     Some(generate_as_bytes_checks(input)?)
+                    // } else {
+                    //     None
+                    // };
+
+                    let path = Self::ident(input);
+                    let assert_fields_are_as_bytes = generate_fields_are_trait(input, path)?;
+
+                    Ok(quote! {
+                      #assert_fields_are_as_bytes
+                    })
+                }
+                Data::Enum(..) => {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        "Enum types cannot derive the `Abi` trait.",
+                    ))
+                }
+                Data::Union(..) => {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        "Union types cannot derive the `Abi` trait.",
+                    ))
+                }
+            }
+        } else {
+            return Err(Error::new_spanned(
+                input.attrs.first().expect("AST parser cannot get first generic parameter."),
+                "AST parser cannot get `repr` attribute from this type.",
+            ));
+        }
+    }
+
+    fn trait_impl(_input: &DeriveInput) -> Result<(TokenStream, TokenStream)> {
+        Ok((quote!(), quote!()))
     }
 }
 
 pub struct Zeroable;
 
-impl Derive for Zeroable {
-    fn ident(_input: &DeriveInput) -> syn::Path {
-        syn::parse_quote!(::abio::Zeroable)
+impl Contract for Zeroable {
+    fn is_unsafe(_: &DeriveInput) -> bool {
+        true
     }
 
-    fn is_unsafe(_input: &DeriveInput) -> bool {
+    fn check_attributes(_ty: &Data, _attributes: &[Attribute]) -> Result<()> {
+        Ok(())
+    }
+
+    fn requires_where_clause() -> bool {
         true
+    }
+}
+
+impl Generate for Zeroable {
+    fn ident(_input: &DeriveInput) -> syn::Path {
+        syn::parse_quote!(::abio::Zeroable)
     }
 }
 
@@ -183,7 +303,7 @@ fn get_field_types<'ast>(fields: &'ast Fields) -> impl Iterator<Item = &'ast Typ
 
 /// Check that a struct has no padding by asserting that the size of the struct
 /// is equal to the sum of the size of it's fields
-fn generate_assert_no_padding(input: &DeriveInput) -> Result<TokenStream> {
+fn generate_padding_checks(input: &DeriveInput) -> Result<TokenStream> {
     let struct_type = &input.ident;
     let span = input.ident.span();
     let fields = get_fields(input)?;

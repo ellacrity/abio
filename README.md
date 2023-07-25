@@ -10,7 +10,7 @@ This project is under active development. We are actively seeking contributors, 
 
 ## Purpose
 
-Rust does not yet have a stable ABI. We cannot rely on the <u>["default" ABI][repr-default]</u> for stability, but it is possible to use existing memory representations to create an ABI that is consistent. This "ABI" this crate attempts to define uses traits to enforce contracts for types adhering to the ABI. This approach is not new and several existing projects work in a very similar manner.
+Rust does not yet have a stable ABI. We cannot rely on the <u>["default" ABI][repr-default]</u> for stability, but it is possible to use existing Abi representations to create an ABI that is consistent. This "ABI" this crate attempts to define uses traits to enforce contracts for types adhering to the ABI. This approach is not new and several existing projects work in a very similar manner.
 
 ## Goals
 

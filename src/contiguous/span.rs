@@ -5,13 +5,10 @@
 //! arrays.
 
 use core::num::NonZeroUsize;
-use core::ops::{Add, AddAssign, Index, IndexMut, Range};
-use core::slice;
+use core::ops::{Index, IndexMut, Range};
 
 use crate::contiguous::Chunk;
-use crate::{Array, AsBytes, Bytes, Source};
-
-// FIXME: Make Span's methods `const` as soon as they are supported.
+use crate::{Array, Bytes, Source};
 
 /// A region of memory defined by a pair of indices marking the start and end offsets
 /// of an allocated object in memory.
@@ -31,41 +28,28 @@ pub struct Span {
     end: usize,
 }
 
-impl Add<usize> for Span {
-    type Output = usize;
+pub trait Spanned: Sized + Copy + PartialEq {
+    /// Creates a new [`Span`], representing the range comprising the indices of the
+    /// `bytes` slice.
+    fn from_bytes(bytes: &[u8]) -> Self;
 
-    fn add(self, other: usize) -> Self::Output {
-        self.start + other
-    }
-}
-impl AddAssign<usize> for Span {
-    fn add_assign(&mut self, rhs: usize) {
-        let mut start = self.start;
-        let mut end = self.end;
-        start += rhs;
-        let end = if start > end {
-            end = start;
-            end
-        } else {
-            end += rhs;
-            end
-        };
-        *self = Self { start, end };
-    }
-}
+    fn source_bytes(&self) -> &[u8];
 
-impl Add<Span> for Span {
-    type Output = Span;
+    /// Extracts a type `T` where `T: Abi` from a [`Source`], returning `T` and the
+    /// [`Span`] representing the type.
 
-    fn add(self, other: Span) -> Self::Output {
-        Span::new(self.start + other.start, self.end + other.end)
-    }
-}
+    fn from_source<S: Source>(source: &S) -> Self;
 
-impl AddAssign<Span> for Span {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = Self { start: self.start + rhs.start, end: self.end + rhs.end }
-    }
+    /// Constructs a new [`Span`] by reading data from a sized [`Chunk`], read from
+    /// some input [`Source`].
+    fn from_chunk<A: Array<N>, const N: usize>(chunk: Chunk<N>) -> Self;
+
+    /// Returns the start of this span, also referred to as its `offset`.
+    #[doc(alias = "offset")]
+    fn start(&self) -> usize;
+
+    /// Returns the end the span, represented as its upper bound, or index.
+    fn end(&self) -> usize;
 }
 
 impl Span {
@@ -75,15 +59,19 @@ impl Span {
     ///
     /// This contructor method will panic if `start < end`.
     #[inline(always)]
-    pub const fn new(offset: usize, size: usize) -> Self {
-        Span { start: offset, end: offset + size }
+    pub const fn new(start: usize, size: usize) -> Self {
+        Span { start, end: start + size }
     }
 
+    /// Creates a new [`Span`], representing the range comprising the indices of the
+    /// `bytes` slice.
     #[inline]
-    pub const fn from_bytes(bytes: &[u8]) -> Span {
+    pub const fn bytes(bytes: &[u8]) -> Span {
         Self { start: 0, end: bytes.len() }
     }
 
+    /// Extracts a type `T` where `T: Abi` from a [`Source`], returning `T` and the
+    /// [`Span`] representing the type.
     #[inline]
     pub fn from_source<S: Source>(source: &S) -> Span {
         Self { start: 0, end: source.source_len() }
@@ -91,11 +79,9 @@ impl Span {
 
     /// Constructs a new [`Span`] by reading data from a sized [`Chunk`], read from
     /// some input [`Source`].
-    ///
-    /// Returns `None` if the
     #[inline]
-    pub fn from_chunk<'chunk, A: Array<'chunk, N>, const N: usize>(chunk: Chunk<N>) -> Span {
-        Self { start: 0, end: chunk.as_slice().len() }
+    pub fn from_chunk<A: Array<N>, const N: usize>(chunk: Chunk<N>) -> Span {
+        Self { start: 0, end: chunk.len() }
     }
 
     /// Returns the size of this [`Span`].
@@ -175,7 +161,7 @@ impl IndexMut<Span> for [u8] {
     }
 }
 
-impl<'a> Index<Span> for Bytes<'a> {
+impl<'a> Index<Span> for &'a Bytes {
     type Output = [u8];
 
     fn index(&self, span: Span) -> &Self::Output {

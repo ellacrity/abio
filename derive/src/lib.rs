@@ -1,111 +1,90 @@
 #![allow(dead_code)]
 
-extern crate proc_macro;
+use proc_macro2::{Span, TokenStream};
+use quote::ToTokens;
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, DeriveInput, Error, Result};
 
-use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+mod helpers;
+use helpers::{Abi, AsBytes, Generate, Zeroable};
 
-mod internal;
-use internal::{Abi, AsBytes, Derive, Zeroable};
+const ABIO_DEBUG: &str = "ABIO_DEBUG";
 
 #[proc_macro_derive(Abi)]
-pub fn derive_abi(input: TokenStream) -> TokenStream {
-    derive_trait::<Abi>(input)
+pub fn derive_abi(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    derive_marker_trait_inner::<Abi>(input)
 }
 
 #[proc_macro_derive(AsBytes)]
-pub fn derive_as_bytes(input: TokenStream) -> TokenStream {
-    derive_trait::<AsBytes>(input)
+pub fn derive_as_bytes(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    derive_marker_trait_inner::<AsBytes>(input)
 }
 
 #[proc_macro_derive(Zeroable)]
-pub fn derive_zeroable(input: TokenStream) -> TokenStream {
-    derive_trait::<Zeroable>(input)
+pub fn derive_zeroable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    derive_marker_trait_inner::<Zeroable>(input)
+}
+
+fn derive_marker_trait_inner<G: Generate>(
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    generate_trait_impl::<G>(input).unwrap_or_else(|e| e.into_compile_error()).into()
 }
 
 #[proc_macro_derive(Decode)]
-pub fn derive_decode(input: TokenStream) -> TokenStream {
+pub fn derive_decode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
     // Parse the input AST from the `Decode<T>` trait.
     let expanded = parse_decode_input(&input);
 
     // Return the generated implementation as tokens
-    TokenStream::from(expanded)
+    TokenStream::from(expanded).into()
 }
 
-fn derive_trait<D: Derive>(input: TokenStream) -> TokenStream {
-    // Parse the input tokens into a syntax tree
-    let input = parse_macro_input!(input as DeriveInput);
-    // Generate the implementation of the Decodable trait
-    match derive_trait_inner::<D>(input) {
-        Ok(ts) => TokenStream::from(ts),
-        Err(err) => err.throw_with_span(Span::mixed_site()).into(),
-    }
+fn inspect_input(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let parsed = parse_macro_input!(tts as DeriveInput);
+    println!("{parsed:#?}");
+    proc_macro::TokenStream::from(parsed.to_token_stream())
 }
 
-/// Parse the syntax tree associated with a `Decode` implementation.
-///
-/// ```ignore
-/// pub trait Decode<E: Endian>: Abi {
-///     /// Offset type used to index into the source.
-///     type Offset;
-///
-///     /// Decodes a concrete type `T` from an immutable reference to `self`.
-///     ///
-///     /// # Errors
-///     ///
-///     /// Returns an error if the operation fails due to a size mismatch or misaligned
-///     /// read.
-///     fn decode(source: &[u8], offset: Self::Offset, endian: E) -> Result<Self>;
-/// }
-/// ```
 fn parse_decode_input(input: &DeriveInput) -> proc_macro2::TokenStream {
-    let name = &input.ident;
-    let mut generator = virtue::generate::Generator::with_name("Decode");
-    generator.r#impl().modify_generic_constraints(|generics, constraints| {
-        for generic in generics.iter_generics() {
-            if let Err(err) = constraints.push_constraint(generic, "Decode") {
-                err.throw_with_span(Span::mixed_site());
-            }
-        }
-    });
-
-    println!("Generating code for {name}");
-    // let expanded = quote! {
-    //     impl #{name}<E: Endian>: Abi {
-    //         type Offset = Span;
-    //     }
-    // };
-    // TokenStream::from(expanded)
-    generator.finish().expect("failed to generate code for Decode trait.")
+    let name = format_ident!("{}", input.ident);
+    quote! {
+        #name
+    }
 }
 
 fn derive_decode_trait(_input: &DeriveInput) -> TokenStream {
     todo!()
 }
 
-fn derive_trait_inner<D: Derive>(
-    mut input: DeriveInput,
-) -> virtue::Result<proc_macro2::TokenStream> {
+fn generate_trait_impl<G: Generate>(mut input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     // Enforce Abi to be implemented on all
-    let trait_name = D::ident(&input);
-    add_trait_marker(&mut input.generics, &trait_name);
+    let trait_name = G::ident(&input);
+    G::add_trait_marker(&mut input.generics, &trait_name);
 
     let name = &input.ident;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    D::check_attributes(&input.data, &input.attrs)
-        .map_err(|_| virtue::Error::ExpectedIdent(Span::call_site()))?;
+    G::check_attributes(&input.data, &input.attrs).map_err(|err| {
+        eprintln!("{err:?}");
+        Error::new(
+            Span::call_site(),
+            "Cannot implement this trait for this type due to invalid attribute values.",
+        )
+    })?;
 
-    let asserts = D::asserts(&input).expect("assert failed for type: {name}");
-    let (trait_impl_extras, trait_impl) =
-        D::trait_impl(&input).map_err(|_| virtue::Error::ExpectedIdent(Span::call_site()))?;
+    let assertions = match G::asserts(&input) {
+        Ok(asserts) => asserts,
+        Err(err) => err.into_compile_error().to_token_stream(),
+    };
 
-    let impl_prefix = if D::is_unsafe(&input) {
+    let (trait_impl_extras, trait_impl) = G::trait_impl(&input)?;
+
+    let impl_prefix = if G::is_unsafe(&input) {
         quote! {
             unsafe impl
         }
@@ -115,7 +94,7 @@ fn derive_trait_inner<D: Derive>(
         }
     };
 
-    let implies_trait = if let Some(implies_trait) = D::fulfills_contract() {
+    let implies_trait = if let Some(implies_trait) = G::fulfills_contract() {
         quote! {
             #impl_prefix #impl_generics #implies_trait for #name #ty_generics #where_clause {}
         }
@@ -123,10 +102,10 @@ fn derive_trait_inner<D: Derive>(
         quote! {}
     };
 
-    let where_clause = if D::requires_where_clause() { where_clause } else { None };
+    let where_clause = if G::requires_where_clause() { where_clause } else { None };
 
     Ok(quote! {
-      #asserts
+      #assertions
 
       #trait_impl_extras
 
@@ -136,20 +115,4 @@ fn derive_trait_inner<D: Derive>(
 
       #implies_trait
     })
-}
-
-/// Add a trait marker to the generics if it is not already present
-fn add_trait_marker(generics: &mut syn::Generics, trait_name: &syn::Path) {
-    // Get each generic type parameter.
-    let type_params = generics
-        .type_params()
-        .map(|param| &param.ident)
-        .map(|param| {
-            syn::parse_quote!(
-              #param: #trait_name
-            )
-        })
-        .collect::<Vec<syn::WherePredicate>>();
-
-    generics.make_where_clause().predicates.extend(type_params);
 }

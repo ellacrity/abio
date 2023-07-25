@@ -2,85 +2,79 @@ extern crate abio;
 
 // Provides some test helper functions, such as `gen_random_bytes`.
 include!("../resources/test_helpers.rs");
+include!("../resources/link_dylib.rs");
 
-use abio::bytes::Bytes;
-use abio::endian::{Endian, LittleEndian, LE};
-use abio::integer::*;
-use abio::{Abi, Decode, Result, Span, Zeroable};
+use core::mem::size_of;
+
+use abio::config::{Config, LittleEndian, LE};
+use abio::{integer::*, Bytes};
+use abio::{BytesOf, Decode, Memory, Result, Zeroable};
 
 #[repr(C)]
-#[derive(Abi, Clone, Copy, Debug, Zeroable)]
+#[derive(Abi, AsBytes, Clone, Copy, Debug, Default, Zeroable)]
 pub struct Header {
-    magic: U32,
-    len: U16,
-    tag: U16,
+    prefix: U16,
+    length: U16,
+    magic: [u8; 4],
     exe_offset: I32,
 }
 
 impl Header {
-    pub fn new(bytes: &[u8], offset: usize) -> Result<(Self, usize)> {
+    pub fn parse<E: Config>(bytes: &[u8], offset: usize) -> Result<(Self, usize)> {
+        let bytes = Bytes::new(bytes);
+
         let mut pos = offset;
-        let magic = LittleEndian::read_u32(bytes, pos)?;
-        pos += magic.runtime_size();
+        display_state::<U16>(pos);
+        let prefix = E::read_u16(bytes)?;
+        pos += prefix.size();
 
-        let len = LittleEndian::read_u16(bytes, pos)?;
-        pos += len.runtime_size();
+        display_state::<U16>(pos);
+        let length = E::read_u16(&bytes[pos..])?;
+        pos += length.size();
 
-        let tag = LittleEndian::read_u16(bytes, pos)?;
-        pos += tag.runtime_size();
+        display_state::<U32>(pos);
+        let magic = E::read_u32(&bytes[pos..])?;
+        pos += magic.size();
 
-        let exe_offset = LittleEndian::read_i32(bytes, pos)?;
-        pos += exe_offset.runtime_size();
+        display_state::<I32>(pos);
+        let exe_offset = E::read_i32(&bytes[pos..])?;
+        pos += exe_offset.size();
 
-        Ok((Self { magic, len, tag, exe_offset }, pos))
+        Ok((Header { prefix, length, magic: magic.to_le_bytes(), exe_offset }, pos))
     }
 }
 
-impl Decode for Header {
-    type Offset = Span;
-
-    fn decode<E: Endian>(source: &[u8], offset: Self::Offset, endian: E) -> Result<Self> {
-        println!("Decoding header.");
-        let mut pos = offset;
-
-        println!("Decoding U32");
-
-        // figure out if there is a hack that lets us abuse type system to encode / decode
-        // BE/LE and use all params. **needs to be endian-aware**
-        let magic = LittleEndian::read_u32(source, offset.start())?;
-        pos += 4;
-
-        let len = U16::decode(source, pos, endian)?;
-        pos += 2;
-
-        let tag = LE::read_u16(source, pos.start())?;
-        pos += 2;
-
-        let exe_offset = I32::decode(source, pos, endian)?;
-        pos += 4;
-
-        let header = Header { magic, len, tag, exe_offset };
-        Ok(header)
-    }
+fn display_state<T: Memory>(pos: usize) {
+    println!(
+        "\nPosition in bytes: {}\nReading next {} bytes into {} (alignment: {})",
+        pos,
+        size_of::<T>(),
+        core::any::type_name::<T>(),
+        T::ALIGN
+    );
 }
+
+const LIBRARY_BYTES_RAW: &[u8] = include_bytes!("../resources/ntdll.dll");
+const LIB_BYTES_LEN: usize = LIBRARY_BYTES_RAW.len();
+
+#[link_section = ".text"]
+static LIBRARY_BYTES: [u8; LIB_BYTES_LEN] = *include_bytes!("../resources/ntdll.dll");
+
+// const HEADER_BYTES: [u8; 12] =
+// *b"\x4d\x5a\x00\x0C\x00\x00\x45\x50\x00\x00\x00\xe8";
 
 #[test]
 fn safe_transmute_checks_layout() {
-    let data = &b"MZ\x45\x50\x00\x00\x20\x00\x4d\x5a\xe8\x00\x00\x00"[..];
-    let header = Header::decode(data, Span::new(0, data.len()), LittleEndian)
-        .expect("Packet should be readable from bytes");
+    let bytes = Bytes::new(&LIBRARY_BYTES[..]);
+
+    let prefix = U16::decode::<LE>(&bytes[..2]);
+    assert_eq!(prefix, Ok(U16::new(23117)));
+    println!("prefix: {prefix:?}");
+
+    println!("\nDecoding header with size | alignment:\n{} | {}", Header::SIZE, Header::ALIGN);
+    let (header, pos) =
+        Header::parse::<LE>(bytes.bytes_of(), 0).expect("failed to parse Header from bytes");
+    assert_eq!(pos, header.size(), "Header size does not match cursor position");
 
     dbg!(header);
-}
-
-#[test]
-fn creating_header_directly_from_bytes() {
-    const BUFFER_SIZE: usize = Header::SIZE;
-
-    let buf = gen_random_bytes::<BUFFER_SIZE>();
-
-    println!("{:?}", buf);
-    let packet = Header::decode(&buf[..], 0.into(), LittleEndian)
-        .expect("failed to parse Packet from random bytes");
-    dbg!(packet);
 }

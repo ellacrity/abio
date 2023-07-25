@@ -67,9 +67,9 @@ impl_zeroable_trait! {
     // signed integer primitives
     i8, i16, i32, i64, i128, isize,
     // unsigned endian-aware integers
-    U8, U16, U32, U64, U128, USize,
+    U8, U16, U32, U64, U128, Usize,
     // signed endian-aware integers
-    I8, I16, I32, I64, I128, ISize,
+    I8, I16, I32, I64, I128, Isize,
     // floating point numbers
     f32, f64,
 }

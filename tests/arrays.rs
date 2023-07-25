@@ -1,47 +1,25 @@
 use core::slice;
-use std::sync::OnceLock;
 use std::time::SystemTime;
 
-use abio::integer::U128;
+use abio::config::LE;
+use abio::integer::U32;
+use abio::{Decode, Memory};
 
 include!("../resources/test_helpers.rs");
 
-pub struct TimeGuard {
-    inner: SystemTime,
-}
-
-impl TimeGuard {
-    pub fn new() -> Self {
-        let inner = SystemTime::now();
-        Self { inner }
-    }
-
-    pub fn elapsed(&self) -> U128 {
-        U128::new(
-            self.inner
-                .elapsed()
-                .expect("SystemTime should produce an elapsed value since creation")
-                .as_millis(),
-        )
-    }
-}
-
-impl Default for TimeGuard {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Drop for TimeGuard {
-    fn drop(&mut self) {
-        let elapsed = self.elapsed();
-        println!("TimeGuard dropped after: {elapsed}ms");
-    }
+fn generate_int() -> U32 {
+    let mut buf = [0u8; <U32 as Memory>::SIZE];
+    getrandom::getrandom(&mut buf).unwrap();
+    U32::decode::<LE>(&buf).unwrap()
 }
 
 #[test]
+#[cfg(not(miri))]
 fn converting_to_byte_array() {
-    pub static DATA: OnceLock<[[u8; 256]; 1000]> = OnceLock::new();
+    use std::thread;
+
+    use abio::config::LittleEndian;
+    use abio::{BytesOf, Chunk};
 
     #[inline]
     pub const unsafe fn read_byte_array_unchecked<const SIZE: usize>(
@@ -53,16 +31,28 @@ fn converting_to_byte_array() {
         raw_slice.as_ptr().cast::<[u8; SIZE]>().read()
     }
 
-    let timer = SystemTime::now();
-    let data = DATA.get_or_init(|| {
-        let mut array = [[0u8; 256]; 1000];
-        array.iter_mut().for_each(|item| *item = gen_random_bytes::<256>());
+    let handle1 = thread::spawn(|| {
+        let mut array = [[0u8; 4]; 1024 * 8];
+        array.iter_mut().for_each(|item| *item = generate_int().to_le_bytes());
         array
     });
 
-    for (_, array) in data.iter().enumerate() {
-        let array = unsafe { read_byte_array_unchecked::<128>(array, 64) };
-        assert_eq!(array.len(), 128);
+    let handle2 = thread::spawn(|| {
+        let mut array = [[0u8; 4]; 1024 * 8];
+        array.iter_mut().for_each(|item| *item = generate_int().to_le_bytes());
+        array
+    });
+
+    let out1 = handle1.join().expect("failed to join handle1 with current thread");
+    let out2 = handle2.join().expect("failed to join handle1 with current thread");
+    let output = [out1, out2].concat();
+
+    for (index, value) in output.into_iter().enumerate() {
+        let chunk = Chunk::from_array(value);
+        let value = U32::from_chunk(chunk, LittleEndian);
+        let value2 =
+            U32::from_le_bytes(unsafe { read_byte_array_unchecked::<4>(chunk.as_bytes(), 0) });
+        assert!(!value.bytes_of().is_empty(), "index {index} has an empty value.");
+        assert_eq!(value, value2, "{value} != {value2}; expected both values to be equal");
     }
-    println!("Elapsed: {}ms", timer.elapsed().unwrap().as_millis());
 }

@@ -7,10 +7,14 @@
 //!
 //! [signed]: crate::integer::signed
 //! [unsigned]: crate::integer::unsigned
-
 #[macro_use]
 mod internal;
-pub use internal::Integer;
+pub use internal::{Integer, NonZeroInteger};
 
 mod aligned;
-pub use aligned::*;
+#[rustfmt::skip]
+pub use aligned::{U8, U16, U32, U64, U128};
+#[rustfmt::skip]
+pub use aligned::{I8, I16, I32, I64, I128};
+#[rustfmt::skip]
+pub use aligned::{Usize, Isize};

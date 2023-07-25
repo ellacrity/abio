@@ -6,7 +6,7 @@ use core::num::{
     NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
 };
 
-use crate::integer::*;
+use crate::{integer::*, BytesOf, Decode};
 use crate::{Chunk, Zeroable};
 
 /// A trait that a type must implement to be considered compatible with the
@@ -48,7 +48,7 @@ use crate::{Chunk, Zeroable};
 /// uphold these invariants is **undefined behaviour**.
 ///
 /// [ABI]: https://en.wikipedia.org/wiki/Application_binary_interface
-pub unsafe trait Abi: Sized + Copy + 'static {
+pub unsafe trait Abi: BytesOf + Sized + 'static {
     /// Returns the [ABI]-required minimum alignment of a type in bytes.
     ///
     /// Every reference to a value of the type `T` must be a multiple of this number.
@@ -80,19 +80,73 @@ pub unsafe trait Abi: Sized + Copy + 'static {
     ///
     /// [ABI]: https://en.wikipedia.org/wiki/Application_binary_interface
     #[inline]
-    fn min_align(&self) -> usize {
-        align_of_val(self)
+    fn alignment(&self) -> usize {
+        debug_assert_eq!(align_of_val(self), Self::ALIGN);
+        Self::ALIGN
     }
 
-    /// Returns the size of the pointed-to value in bytes.
+    /// Returns the size of the pointed-to value in bytes at runtime.
+    ///
+    /// This is usually the same as [`size_of::<T>()`]. However, when `T` *has* no
+    /// statically-known size, e.g., a slice [`[T]`][slice] or a [trait object],
+    /// then `size_of_val` can be used to get the dynamically-known size.
+    ///
+    /// [trait object]: ../../book/ch17-02-trait-objects.html
     #[inline]
-    fn runtime_size(&self) -> usize {
-        size_of_val(self)
+    fn size(&self) -> usize {
+        debug_assert_eq!(size_of_val(self), Self::SIZE);
+        Self::SIZE
     }
+
+    /// Attempts to interpret the bits comprising this type as the target type `T`,
+    /// where `T: Abi`.
+    #[inline]
+    fn try_cast_bytes<T: Decode>(&self) -> Result<T, crate::Error> {
+        if self.size() != T::SIZE {
+            Err(crate::Error::size_mismatch(T::SIZE, self.size()))
+        } else if !self.is_access_aligned::<T>() {
+            Err(crate::Error::misaligned_access(self.bytes_of()))
+        }
+    }
+    /*
+    /// Reinterpets the bytes comprising this type as another type `T` where `T:
+    /// Abi`.
+    ///
+    /// # Safety
+    ///
+    /// Your type must fulfill the following criteria:
+    /// * Cannot be a ZST
+    /// * Has known layout requirements at compile time, such as size and minimum
+    ///   alignment
+    #[inline]
+    unsafe fn to_abi_type<T: Abi>(&self) -> Option<&T> {
+        assert!(!Self::IS_ZST, "cannot construct ZST from `Self` where `Self: Abi`");
+        assert!(!T::IS_ZST, "cannot construct ZST from `T` where `T: Abi`");
+        assert!(self.size() != 0, "cannot construct `Abi` type where `self.size() == 0`");
+        if self.size() == 0 || Self::IS_ZST {
+            None
+        } else {
+            Some(<*const _>::from(&self).cast::<T>().read())
+        }
+    } */
 }
 
+// #[repr(transparent)]
+// pub struct AbiType<S, A> {
+//     source: S,
+//     marker: PhantomData<A>,
+// }
+
+// impl<S: Source, A: Abi> Deref for AbiType<S, A> {
+//     type Target = A;
+
+//     fn deref(&self) -> &Self::Target {
+//         self.source.read_chunk_at(0)
+//     }
+// }
+
 // const-generics are supported for all array types `[T; N] where T: Abi`.
-unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi + Zeroable {}
+unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi + Integer + Zeroable {}
 
 macro_rules! impl_abi_for_primitives {
     ($($ty:ty),* $(,)?) => {
@@ -104,7 +158,7 @@ macro_rules! impl_abi_for_primitives {
 
 impl_abi_for_primitives!((), bool, char);
 impl_abi_for_primitives!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
-impl_abi_for_primitives!(U8, U16, U32, U64, U128, USize, I8, I16, I32, I64, I128, ISize);
+impl_abi_for_primitives!(U8, U16, U32, U64, U128, Usize, I8, I16, I32, I64, I128, Isize);
 impl_abi_for_primitives!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize);
 impl_abi_for_primitives!(NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128, NonZeroIsize);
 
