@@ -4,7 +4,7 @@ struct MagicSequence<const N: usize> {
     inner: [u8; N],
 }
 
-#[derive(Abi, AsBytes, Zeroable)]
+#[derive(Abi, BytesOf, Zeroable)]
 pub struct Message<const N: usize> {
     magic: MagicSequence<N>,
 }

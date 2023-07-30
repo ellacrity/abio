@@ -27,7 +27,6 @@ use crate::Chunk;
 ///
 /// [zeroed]: MaybeUninit::zeroed
 /// [ub]: ../../reference/behavior-considered-undefined.html
-/// [invariants]: MaybeUninit#initialization-invariant
 pub unsafe trait Zeroable: Sized + 'static {
     /// Initializes this type as a contiguous region of memory represented by the
     /// all-zero byte pattern.

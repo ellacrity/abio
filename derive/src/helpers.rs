@@ -175,9 +175,9 @@ impl Generate for Decode {
     }
 }
 
-pub struct AsBytes;
+pub struct BytesOf;
 
-impl Contract for AsBytes {
+impl Contract for BytesOf {
     fn is_unsafe(_: &DeriveInput) -> bool {
         true
     }
@@ -191,9 +191,9 @@ impl Contract for AsBytes {
     }
 }
 
-impl Generate for AsBytes {
+impl Generate for BytesOf {
     fn ident(_input: &DeriveInput) -> syn::Path {
-        parse_quote!(::abio::AsBytes)
+        parse_quote!(::abio::BytesOf)
     }
 
     fn fulfills_contract() -> Option<TokenStream> {

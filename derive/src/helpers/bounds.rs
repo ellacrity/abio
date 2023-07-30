@@ -10,7 +10,7 @@ use syn::{parse_quote, Error, GenericParam, Generics};
 pub fn add_trait_bounds(mut generics: Generics) -> Generics {
     for param in &mut generics.params {
         if let GenericParam::Type(type_param) = param {
-            type_param.bounds.push(parse_quote!(::abio::AsBytes));
+            type_param.bounds.push(parse_quote!(::abio::BytesOf));
         }
     }
     generics

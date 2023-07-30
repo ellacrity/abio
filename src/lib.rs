@@ -1,35 +1,33 @@
-//! [`abio`][abio] is a low-level crate for performing endian-aware operations
-//! on raw byte slices, converting to and from concrete types using zero-copy
-//! serialization and deserialization routines. This crate is an attempt at
-//! implementing ["safe transmute"][safe-transmute].
-//!
-//! This project is currently under active development and there are expected to be
-//! many breaking changes while trying to stabilize the project as quickly as
-//! possible.
-//!
-//! [abio]: https://docs.rs/abio/latest/src/abio
-//! [safe-transmute]: https://rust-lang.github.io/rfcs/2835-project-safe-transmute.html
+#![doc = include_str!("../docs/abio.md")]
 #![no_std]
-#![feature(const_trait_impl, trait_alias, strict_provenance)]
+#![deny(missing_docs, clippy::missing_safety_doc, clippy::missing_const_for_fn)]
+// ISSUE #4: Remove unstable features when they are stabilized.
+#![feature(const_trait_impl, strict_provenance)]
 
 pub mod integer;
-pub use integer::{Integer, NonZeroInteger};
+use integer::Integer;
 
 mod layout;
-pub use layout::decode::Decode;
-pub use layout::{config, Abi, BytesOf, Zeroable};
+pub use layout::decode;
+pub use layout::endian;
+pub use layout::endian::{BigEndian, Endian, Endianness, LittleEndian, NativeEndian, BE, LE};
+pub use layout::{Abi, BytesOf, Decode, Zeroable};
 
-mod contiguous;
-pub use contiguous::{Array, Bytes, Chunk, Source, Span};
+mod config;
+pub use config::{Codec, CodecBuilder, Limit};
+
+mod source;
+pub use source::{Array, Buf, ByteArray, Bytes, Chunk, Source, Span};
 
 mod error;
 pub use error::{Error, Result};
 
-#[cfg(feature = "shims")]
-pub mod shims;
-#[cfg(not(feature = "shims"))]
+// internal use only
 mod shims;
 
 // Enable traits to be derived if the `derived` feature is enabled
 #[cfg(feature = "derive")]
-pub use abio_derive::{Abi, AsBytes, Decode, Zeroable};
+pub use abio_derive::{Abi, BytesOf, Decode, Zeroable};
+
+#[doc(hidden)]
+mod sealed;

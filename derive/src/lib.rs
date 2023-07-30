@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, DeriveInput, Error, Result};
 
 mod helpers;
-use helpers::{Abi, AsBytes, Generate, Zeroable};
+use helpers::{Abi, BytesOf, Generate, Zeroable};
 
 const ABIO_DEBUG: &str = "ABIO_DEBUG";
 
@@ -15,9 +15,9 @@ pub fn derive_abi(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_marker_trait_inner::<Abi>(input)
 }
 
-#[proc_macro_derive(AsBytes)]
+#[proc_macro_derive(BytesOf)]
 pub fn derive_as_bytes(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_marker_trait_inner::<AsBytes>(input)
+    derive_marker_trait_inner::<BytesOf>(input)
 }
 
 #[proc_macro_derive(Zeroable)]
@@ -57,7 +57,7 @@ fn parse_decode_input(input: &DeriveInput) -> proc_macro2::TokenStream {
 }
 
 fn derive_decode_trait(_input: &DeriveInput) -> TokenStream {
-    todo!()
+    unimplemented!()
 }
 
 fn generate_trait_impl<G: Generate>(mut input: DeriveInput) -> Result<proc_macro2::TokenStream> {

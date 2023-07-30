@@ -31,44 +31,7 @@ pub use bytes_of::BytesOf;
 pub mod decode;
 pub use decode::Decode;
 
-pub mod config;
-
-mod slice;
-pub use slice::Slice;
+pub mod endian;
 
 mod zeroable;
 pub use zeroable::Zeroable;
-
-/// Types whose values can be safely transmuted between byte arrays of the same size.
-///
-/// # Safety
-///
-/// It must be safe to transmute between any byte array (with length equal to the
-/// size of the type) and `Self`.
-///
-/// This is true for these primitive types: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`,
-/// `u16`, `u32`, `u64`, `u128`, `f32`, `f64`. The raw pointer types are not pod
-/// under strict provenance rules but can be through the 'int2ptr' feature.
-/// Primitives such as `str` and `bool` are not pod because not every valid byte
-/// pattern is a valid instance of these types. References or types with lifetimes
-/// are _never_ pod.
-///
-/// Arrays and slices of pod types are also pod themselves.
-///
-/// Note that it is legal for pod types to be a [ZST](https://doc.rust-lang.org/nomicon/exotic-sizes.html#zero-sized-types-zsts).
-///
-/// When `Pod` is implemented for a user defined type it must meet the following
-/// requirements:
-///
-/// * Must be annotated with [`#[repr(C)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprc)
-///   or [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent).
-/// * Must have every field's type implement `Pod` itself.
-/// * Must not have any padding between its fields, define dummy fields to cover the
-///   padding.
-///
-/// # Derive macro
-///
-/// To help with safely implementing this trait for user defined types, a [derive
-/// macro](derive@Pod) is provided to implement the `Pod` trait if the requirements
-/// are satisfied.
-pub unsafe trait Pod: 'static {}

@@ -22,30 +22,35 @@ impl Error {
 }
 
 impl From<ErrorKind> for Error {
+    #[inline]
     fn from(kind: ErrorKind) -> Error {
         Error { kind }
     }
 }
 
 impl From<core::array::TryFromSliceError> for Error {
+    #[inline]
     fn from(_: core::array::TryFromSliceError) -> Error {
         Error::incompatible_types()
     }
 }
 
 impl From<core::str::Utf8Error> for Error {
-    fn from(_: core::array::TryFromSliceError) -> Error {
+    #[inline]
+    fn from(_: core::str::Utf8Error) -> Error {
         Error::incompatible_types()
     }
 }
 
 impl From<core::convert::Infallible> for Error {
+    #[inline]
     fn from(_: core::convert::Infallible) -> Error {
         Error::internal_failure()
     }
 }
 
 impl From<&'static str> for Error {
+    #[inline]
     fn from(message: &'static str) -> Error {
         Error::verbose(message)
     }
@@ -67,19 +72,23 @@ pub(crate) enum ErrorKind {
     /// Error caused by a failed conversion attempt due to the types having
     /// incompatible layouts.
     IncompatibleTypes,
+    /// Error caused by a misconfigured or invalid codec. This typically happens if
+    /// the codec has not been fully configured or if it contains invalid parameters
+    /// that violate an invariant enforced by the codec.
+    InvalidCodec {
+        /// Reason the codec initialization failed.
+        reason: &'static str,
+    },
     /// Error caused by an invalid operation attempting to access memory without
     /// first aligning the pointer accessing the underlying data.
-    MisalignedAccess {
-        /// Address where the memory access occurred.
-        address: usize,
-    },
+    MisalignedAccess,
     /// Error caused by an invalid pointer that dereferences to null.
-    NullReference { address: usize },
+    NullReference,
     /// Error originating from an operation that caused an attempted memory access
     /// outside the bounds of a slice or array.
     OutOfBounds {
         /// Number of bytes needed for the operation.
-        minimum: usize,
+        needed: usize,
         /// Actual number of available bytes.
         available: usize,
     },
@@ -88,13 +97,21 @@ pub(crate) enum ErrorKind {
     ///
     /// For source and destination types represent different sizes.
     SizeMismatch {
-        /// Expected, or required, number of bytes needed to fit an instance of the
-        /// target type.
-        expected: usize,
+        /// Minimum number of bytes needed to construct an instance of the target
+        /// type.
+        needed: usize,
         /// Actual number of available bytes in the buffer.
-        actual: usize,
+        available: usize,
     },
     /// Error with an unknown or unexpected origin.
+    ///
+    /// This error is typically a sign that something very, very wrong has happened
+    /// within [`abio`][crate], and not something that you have done wrong.
+    ///
+    /// If you happen to encounter this error, please [open an issue][issue]
+    /// describing what happened.
+    ///
+    /// [issue]:
     #[default]
     InternalFailure,
     /// Error with a detailed message meant for debugging purposes.
@@ -106,23 +123,29 @@ pub(crate) enum ErrorKind {
 
 impl Error {
     pub(crate) const fn decode_failed() -> Error {
-        Error::new(ErrorKind::DecodeFailure { message: "Decoder failed; cannot write malformed bytes due to size or alignment requirements." })
+        Error::new(ErrorKind::DecodeFailure {
+            message:
+                "Decoder failed; cannot write malformed bytes due to size or alignment requirements",
+        })
     }
 
     pub(crate) const fn encode_failed() -> Error {
-        Error::new(ErrorKind::EncodeFailure { message: "Encoder failed; cannot write malformed bytes due to size or alignment requirements." })
+        Error::new(ErrorKind::EncodeFailure {
+            message:
+                "Encoder failed; cannot write malformed bytes due to size or alignment requirements",
+        })
     }
 
-    pub(crate) const fn out_of_bounds(minimum: usize, available: usize) -> Error {
-        Error::new(ErrorKind::OutOfBounds { minimum, available })
+    pub(crate) const fn out_of_bounds(needed: usize, available: usize) -> Error {
+        Error::new(ErrorKind::OutOfBounds { needed, available })
     }
 
-    pub(crate) fn misaligned_access(bytes: &[u8]) -> Error {
-        Error::new(ErrorKind::MisalignedAccess { address: bytes.as_ptr().addr() })
+    pub(crate) const fn misaligned_access() -> Error {
+        Error::new(ErrorKind::MisalignedAccess)
     }
 
-    pub(crate) const fn size_mismatch(expected: usize, actual: usize) -> Error {
-        Error::new(ErrorKind::SizeMismatch { expected, actual })
+    pub(crate) const fn size_mismatch(needed: usize, available: usize) -> Error {
+        Error::new(ErrorKind::SizeMismatch { needed, available })
     }
 
     pub(crate) const fn internal_failure() -> Error {
@@ -133,45 +156,52 @@ impl Error {
         Error::new(ErrorKind::IncompatibleTypes)
     }
 
-    pub(crate) fn null_reference<T: ?Sized>(ptr: *const T) -> Error {
-        Error::new(ErrorKind::NullReference { address: ptr.addr() })
+    pub(crate) const fn null_reference() -> Error {
+        Error::new(ErrorKind::NullReference)
     }
 
     pub(crate) const fn verbose(message: &'static str) -> Error {
         Error::new(ErrorKind::Verbose { message })
     }
+
+    pub(crate) const fn invalid_codec(reason: &'static str) -> Error {
+        Error::new(ErrorKind::InvalidCodec { reason })
+    }
 }
 
 impl fmt::Display for Error {
+    #[allow(clippy::missing_inline_in_public_items)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            ErrorKind::OutOfBounds { minimum: required, available: actual } => {
-                write!(f, "Out of bounds error. Required {required} bytes, but buffer size can only hold {actual} bytes.")
+            ErrorKind::OutOfBounds { needed: required, available: actual } => {
+                write!(f, "Out of bounds error. Required {required} bytes, but buffer size can only hold {actual} bytes")
             }
             ErrorKind::IncompatibleTypes => {
-                write!(f, "Failed to convert one type to another due to incompatible layouts.")
+                write!(f, "Failed to convert one type to another due to incompatible layouts")
             }
             ErrorKind::InternalFailure => write!(
                 f,
-                "Entered unrecoverable failure state with an unknown or unexpected origin."
+                "Entered unrecoverable failure state with an unknown or unexpected origin"
             ),
-            ErrorKind::MisalignedAccess { address } => {
-                write!(f, "Misaligned memory access at address: {address} ({address:p}).")
+            ErrorKind::MisalignedAccess => {
+                write!(f, "Misaligned memory access caused by misaligned pointer")
             }
-            ErrorKind::NullReference { address } => {
-                write!(
-                    f,
-                    "Invalid pointer dereferenced to null at address: {address} ({address:p})",
-                )
+            ErrorKind::NullReference => {
+                write!(f, "Invalid pointer dereferenced to null",)
             }
-            ErrorKind::SizeMismatch { expected: required, actual } => {
-                write!(f, "Size mismatch error. Required {required} bytes, got {actual}.")
+            ErrorKind::SizeMismatch { needed: expected, available: actual } => {
+                write!(f, "Size mismatch error (Required {expected} bytes, got {actual}")
             }
             ErrorKind::Verbose { message } => write!(f, "[ERROR]: {message}"),
             ErrorKind::DecodeFailure { message } => write!(f, "Decode failed: {message}"),
             ErrorKind::EncodeFailure { message } => write!(f, "Encode failed: {message}"),
+            ErrorKind::InvalidCodec { reason } => {
+                write!(f, "Invalid codec configuration: {reason}")
+            }
         }
     }
 }
 
+/// Type alias for conveniently constructing `Result` types using this crate's
+/// [`Error`] type.
 pub type Result<T, E = Error> = core::result::Result<T, E>;

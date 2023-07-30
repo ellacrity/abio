@@ -12,30 +12,25 @@ categories = ["encoding", "no-std", "development-tools::ffi"]
 
 [lib]
 name = "abio"
-crate-type = ["lib"]
 path = "src/lib.rs"
-
-[[bin]]
-name = "abio"
-path = "main.rs"
 
 [features]
 default = ["derive"]
 derive = ["abio_derive"]
-alloc = []
-std = ["alloc"]
-# Escape hatches and additional utility methods
-shims = []
+std = []
 
 [dependencies]
 abio_derive = { version = "0.1.1", path = "derive", optional = true }
+cfg-if = "1.0.0"
 
 [dev-dependencies]
 getrandom = "0.2.10"
+libloading = "0.8.0"
 
 # Enable all features for the docs.rs metadata.
 [package.metadata.docs.rs]
-all-features = true
+targets = ["x86_64-unknown-linux-gnu"]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [profile.dev]
 debug = 0

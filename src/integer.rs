@@ -8,8 +8,8 @@
 //! [signed]: crate::integer::signed
 //! [unsigned]: crate::integer::unsigned
 #[macro_use]
-mod internal;
-pub use internal::{Integer, NonZeroInteger};
+mod macros;
+pub use macros::Integer;
 
 mod aligned;
 #[rustfmt::skip]

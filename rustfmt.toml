@@ -20,6 +20,3 @@ single_line_if_else_max_width = 70
 # Consistent imports ordering
 imports_granularity = "Preserve"
 group_imports = "StdExternalCrate"
-
-# Reorder trait implementations for consistency.
-reorder_impl_items = true

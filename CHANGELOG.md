@@ -14,25 +14,33 @@ This document outlines the changes made to the codebase, including pending chang
 
 ## [0.3.1]
 
+### Added
+
+- 
+
 ### Changed
 
-- Relaxed the trait bound on `AsBytes`
-
-- `Decode` trait now 
+- Relaxed the trait bound on `BytesOf`
+- Added `const fn` whenever possible to push as much validation to compile time as possible.
+- `Decode` trait made more useful:
+  -  Can handle endianness
+  -  Can be configured to aset a limit on the maximum allowed buffered bytes
+     -  This is techniquely a fix, since otherwise this could easily result in a DOS attack where the attacker could send an arbitrarily large input, causing the program to crash.
 
 ## [0.3.0] - 2023-07-20
 
 ### Added
 
-- Added `Chunk<N>` type for working with arrays of fixed size data
-- `Span` type for indexing into 
+- `Chunk` type for for working with byte arrays with a fixed size
+  - The `Chunk` type is generic over its length, wrapping the `[u8; N]` type
+- Introduced the `Span` type for indexing, slicing and general 
 - Add declarative macros to auto-generate trait implementations
   - `aligned` integer types are defined via `macro_rules`
-- Add `AsBytes` type for types that 
+- Add `BytesOf` type for types that 
 
 ### Changed
 
-- `BytesOf` trait is now called `AsBytes`
+- `BytesOf` trait is now called `BytesOf`
 
 
 ## [Unreleased]

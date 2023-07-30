@@ -6,8 +6,8 @@ use core::num::{
     NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
 };
 
-use crate::{integer::*, BytesOf, Decode};
-use crate::{Chunk, Zeroable};
+use crate::Chunk;
+use crate::{integer::*, Buf, Result};
 
 /// A trait that a type must implement to be considered compatible with the
 /// [`ABI`][ABI].
@@ -21,7 +21,7 @@ use crate::{Chunk, Zeroable};
 /// [`Integer`] types.
 ///
 /// Notable restrictions include:
-/// * Your type must be `Sized + Copy`
+/// * Your type must be `Sized`
 /// * Your type may not contain immutable or mutable references types
 /// * Types with a `'static` lifetime are supported and considered legal
 ///
@@ -48,7 +48,7 @@ use crate::{Chunk, Zeroable};
 /// uphold these invariants is **undefined behaviour**.
 ///
 /// [ABI]: https://en.wikipedia.org/wiki/Application_binary_interface
-pub unsafe trait Abi: BytesOf + Sized + 'static {
+pub unsafe trait Abi: Sized + 'static {
     /// Returns the [ABI]-required minimum alignment of a type in bytes.
     ///
     /// Every reference to a value of the type `T` must be a multiple of this number.
@@ -72,7 +72,9 @@ pub unsafe trait Abi: BytesOf + Sized + 'static {
     /// additional details.
     const SIZE: usize = core::mem::size_of::<Self>();
 
+    /// Returns `true` if this type is a ZST, with a size of zero bytes.
     const IS_ZST: bool = Self::SIZE == 0;
+
     /// Returns the [ABI]-required minimum alignment of the type of the value that
     /// `val` points to in bytes.
     ///
@@ -87,7 +89,7 @@ pub unsafe trait Abi: BytesOf + Sized + 'static {
 
     /// Returns the size of the pointed-to value in bytes at runtime.
     ///
-    /// This is usually the same as [`size_of::<T>()`]. However, when `T` *has* no
+    /// This is usually the same as `size_of::<T>()`. However, when `T` *has* no
     /// statically-known size, e.g., a slice [`[T]`][slice] or a [trait object],
     /// then `size_of_val` can be used to get the dynamically-known size.
     ///
@@ -101,52 +103,32 @@ pub unsafe trait Abi: BytesOf + Sized + 'static {
     /// Attempts to interpret the bits comprising this type as the target type `T`,
     /// where `T: Abi`.
     #[inline]
-    fn try_cast_bytes<T: Decode>(&self) -> Result<T, crate::Error> {
-        if self.size() != T::SIZE {
-            Err(crate::Error::size_mismatch(T::SIZE, self.size()))
-        } else if !self.is_access_aligned::<T>() {
-            Err(crate::Error::misaligned_access(self.bytes_of()))
+    fn try_cast_bytes<T: Abi>(bytes: &[u8]) -> Result<T> {
+        if bytes.len() != T::SIZE {
+            Err(crate::Error::size_mismatch(T::SIZE, bytes.len()))
+        } else if !bytes.is_aligned_with::<T>() {
+            Err(crate::Error::misaligned_access())
+        } else {
+            Ok(unsafe { bytes.as_ptr().cast::<T>().read() })
         }
     }
-    /*
-    /// Reinterpets the bytes comprising this type as another type `T` where `T:
-    /// Abi`.
-    ///
-    /// # Safety
-    ///
-    /// Your type must fulfill the following criteria:
-    /// * Cannot be a ZST
-    /// * Has known layout requirements at compile time, such as size and minimum
-    ///   alignment
+
+    /// Attempts to interpret the bits comprising this type as the target type `T`,
+    /// where `T: Abi`.
     #[inline]
-    unsafe fn to_abi_type<T: Abi>(&self) -> Option<&T> {
-        assert!(!Self::IS_ZST, "cannot construct ZST from `Self` where `Self: Abi`");
-        assert!(!T::IS_ZST, "cannot construct ZST from `T` where `T: Abi`");
-        assert!(self.size() != 0, "cannot construct `Abi` type where `self.size() == 0`");
-        if self.size() == 0 || Self::IS_ZST {
-            None
+    fn try_cast_array<T: Abi, const N: usize>(array: [u8; N]) -> Result<T> {
+        if array.len() != T::SIZE {
+            Err(crate::Error::size_mismatch(T::SIZE, array.len()))
+        } else if !array.is_aligned_with::<T>() {
+            Err(crate::Error::misaligned_access())
         } else {
-            Some(<*const _>::from(&self).cast::<T>().read())
+            Ok(unsafe { array.as_ptr().cast::<T>().read() })
         }
-    } */
+    }
 }
 
-// #[repr(transparent)]
-// pub struct AbiType<S, A> {
-//     source: S,
-//     marker: PhantomData<A>,
-// }
-
-// impl<S: Source, A: Abi> Deref for AbiType<S, A> {
-//     type Target = A;
-
-//     fn deref(&self) -> &Self::Target {
-//         self.source.read_chunk_at(0)
-//     }
-// }
-
 // const-generics are supported for all array types `[T; N] where T: Abi`.
-unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi + Integer + Zeroable {}
+unsafe impl<T, const N: usize> Abi for [T; N] where T: Abi + Integer {}
 
 macro_rules! impl_abi_for_primitives {
     ($($ty:ty),* $(,)?) => {
@@ -162,8 +144,8 @@ impl_abi_for_primitives!(U8, U16, U32, U64, U128, Usize, I8, I16, I32, I64, I128
 impl_abi_for_primitives!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize);
 impl_abi_for_primitives!(NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128, NonZeroIsize);
 
-// FIXME: Test that this is actually sound, because it may not be within the bounds
-// of this crate. (ellacrity)
+// ISSUE #2: Verify soundness of implementing Abi for raw pointers
+// https://github.com/ellacrity/abio/issues/2
 unsafe impl<T: Abi> Abi for *const T {}
 unsafe impl<T: Abi> Abi for *mut T {}
 

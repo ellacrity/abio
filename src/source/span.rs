@@ -7,19 +7,19 @@
 use core::num::NonZeroUsize;
 use core::ops::{Index, IndexMut, Range};
 
-use crate::contiguous::Chunk;
-use crate::{Array, Bytes, Source};
+use crate::source::Chunk;
+use crate::{Array, Bytes, Error, Result, Source};
 
 /// A region of memory defined by a pair of indices marking the start and end offsets
 /// of an allocated object in memory.
 ///
 /// # Usage
 ///
-/// In [`abio`][crate], spans are used primarily as an "adapter" type, allowing for
-/// simple, elegant and ergonomic operations on byte slices where offset values are
-/// required. [`Span`]s can be used to operate on [`Source`] types to produce slices
-/// (along with other exotic types, such as [DST][dst]s) as well as types with fixed
-/// sizes, such as [`Chunk`]s.
+/// In [`abio`][crate], spans are used primarily as an "adapter" type, allowing
+/// for simple, elegant and ergonomic operations on byte slices where offset values
+/// are required. [`Span`]s can be used to operate on [`Source`] types to produce
+/// slices (along with other exotic types, such as [DST][dst]s) as well as types with
+/// fixed sizes, such as [`Chunk`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Span {
     /// Start offset of the span.
@@ -28,66 +28,47 @@ pub struct Span {
     end: usize,
 }
 
-pub trait Spanned: Sized + Copy + PartialEq {
-    /// Creates a new [`Span`], representing the range comprising the indices of the
-    /// `bytes` slice.
-    fn from_bytes(bytes: &[u8]) -> Self;
-
-    fn source_bytes(&self) -> &[u8];
-
-    /// Extracts a type `T` where `T: Abi` from a [`Source`], returning `T` and the
-    /// [`Span`] representing the type.
-
-    fn from_source<S: Source>(source: &S) -> Self;
-
-    /// Constructs a new [`Span`] by reading data from a sized [`Chunk`], read from
-    /// some input [`Source`].
-    fn from_chunk<A: Array<N>, const N: usize>(chunk: Chunk<N>) -> Self;
-
-    /// Returns the start of this span, also referred to as its `offset`.
-    #[doc(alias = "offset")]
-    fn start(&self) -> usize;
-
-    /// Returns the end the span, represented as its upper bound, or index.
-    fn end(&self) -> usize;
-}
-
 impl Span {
     /// Creates a new [`Span`] from a `start and `end` offset.
-    ///
-    /// # Panics
-    ///
-    /// This contructor method will panic if `start < end`.
     #[inline(always)]
     pub const fn new(start: usize, size: usize) -> Self {
-        Span { start, end: start + size }
+        let end = start + size;
+        debug_assert!(start <= end, "Cannot construct a valid span where `start > end`.");
+        Span { start, end }
     }
 
     /// Creates a new [`Span`], representing the range comprising the indices of the
     /// `bytes` slice.
     #[inline]
-    pub const fn bytes(bytes: &[u8]) -> Span {
+    pub const fn from_bytes(bytes: &[u8]) -> Self {
         Self { start: 0, end: bytes.len() }
     }
 
     /// Extracts a type `T` where `T: Abi` from a [`Source`], returning `T` and the
     /// [`Span`] representing the type.
     #[inline]
-    pub fn from_source<S: Source>(source: &S) -> Span {
+    pub fn span_source<S: Source>(&self, source: &S) -> Self {
         Self { start: 0, end: source.source_len() }
     }
 
     /// Constructs a new [`Span`] by reading data from a sized [`Chunk`], read from
     /// some input [`Source`].
     #[inline]
-    pub fn from_chunk<A: Array<N>, const N: usize>(chunk: Chunk<N>) -> Span {
+    pub const fn from_chunk<A: Array<N>, const N: usize>(chunk: Chunk<N>) -> Self {
         Self { start: 0, end: chunk.len() }
     }
 
-    /// Returns the size of this [`Span`].
+    /// Returns the length of this [`Span`].
     #[inline]
-    pub const fn size(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
+    }
+
+    /// Returns `true` if the length of the span is 0.
+    #[must_use]
+    #[inline(always)]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Returns the start of this span, also referred to as its `offset`.
@@ -110,8 +91,20 @@ impl Span {
     }
 
     #[inline]
-    pub(crate) const fn empty() -> Span {
-        Span::new(usize::MIN, isize::MAX as usize)
+    pub(crate) const fn span_bytes<'data>(&self, bytes: &'data [u8]) -> Result<Bytes<'data>> {
+        if bytes.len() < self.len() {
+            Err(Error::out_of_bounds(self.len(), bytes.len()))
+        } else {
+            // SAFETY: The check above verifies that `self.start` and `self.size()` are
+            // within the bounds of `bytes`. The only way to obtain a `Span` instance is via one
+            // of its safe constructor functions, so this is safe.
+            Ok(unsafe { Bytes::new_offset_unchecked(bytes, self.len()) })
+        }
+    }
+
+    #[inline]
+    const fn empty() -> Span {
+        Span::new(0, 0)
     }
 }
 
@@ -161,7 +154,7 @@ impl IndexMut<Span> for [u8] {
     }
 }
 
-impl<'a> Index<Span> for &'a Bytes {
+impl<'a> Index<Span> for Bytes<'a> {
     type Output = [u8];
 
     fn index(&self, span: Span) -> &Self::Output {
