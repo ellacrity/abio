@@ -13,8 +13,6 @@ use syn::{
     Generics, ImplGenerics, Meta, Path, Result, Token, Type, TypeGenerics, Visibility, WhereClause,
 };
 
-mod bounds;
-
 pub trait Contract {
     /// Returns true if implementing the trait requires an `unsafe` declaration.
     fn is_unsafe(input: &DeriveInput) -> bool;
