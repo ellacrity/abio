@@ -24,7 +24,3 @@ syn = { version = "2", features = [
 [dev-dependencies.abio]
 path = "../"
 features = ["derive"]
-
-[[test]]
-name = "basic"
-path = "./tests/basic.rs"
