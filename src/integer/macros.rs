@@ -266,7 +266,7 @@ macro_rules! impl_aligned_integer {
 /// Implementing this trait for non-integer types is immediate **undefined
 /// behaviour**. You are strongly encouraged to use the types provided by this crate
 /// or, whenever possible, deriving the unsafe traits for your types. The derive
-/// macros provided by [`abio_derive`][abio-derive] validate the layout of
+/// macros provided by [`abio_derive`][abio_derive] validate the layout of
 /// your custom type(s) at compile time, ensuring that they will work as intended at
 /// runtime.
 #[const_trait]

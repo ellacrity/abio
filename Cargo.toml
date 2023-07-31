@@ -20,7 +20,7 @@ derive = ["abio_derive"]
 std = []
 
 [dependencies]
-abio_derive = { version = "0.1.1", path = "derive", optional = true }
+abio_derive = { version = "0.1.1", path = "abio_derive", optional = true }
 cfg-if = "1.0.0"
 
 [dev-dependencies]
