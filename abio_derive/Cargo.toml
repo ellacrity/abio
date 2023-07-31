@@ -4,6 +4,7 @@ version = "0.1.1"
 edition = "2021"
 description = "Derive macros for the `abio` crate."
 categories = ["encoding", "no-std"]
+license = "MIT"
 
 [lib]
 name = "abio_derive"
