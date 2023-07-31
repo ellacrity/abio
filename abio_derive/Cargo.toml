@@ -11,16 +11,9 @@ name = "abio_derive"
 proc-macro = true
 
 [dependencies]
-obfstr = "0.4.3"
 proc-macro2 = { version = "1.0.66", features = ["nightly", "span-locations"] }
 quote = "1"
-syn = { version = "2", features = [
-  "extra-traits",
-  "full",
-  "visit",
-  "fold",
-  "visit-mut",
-] }
+syn = { version = "2", features = ["extra-traits", "full"] }
 
 [dev-dependencies.abio]
 path = "../"
