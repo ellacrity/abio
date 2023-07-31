@@ -91,9 +91,12 @@ macro_rules! read_aligned_integer {
                 #[doc = ""]
                 #[doc = "# Errors"]
                 #[inline]
-                pub const fn read_aligned(bytes: &[u8], endian: $crate::Endian) -> $crate::Result<$ty> {
+                pub const fn read_aligned(bytes: &[u8], codec: $crate::Codec) -> $crate::Result<$ty> {
+                    if bytes.len() > codec.limit().get() as usize {
+                        return Err($crate::Error::decode_failed());
+                    }
                     match $crate::Chunk::from_bytes(bytes) {
-                        Ok(chunk) => match endian {
+                        Ok(chunk) => match codec.endian() {
                             $crate::Endian::Big => Ok(Self::from_be_chunk(chunk)),
                             $crate::Endian::Little => Ok(Self::from_le_chunk(chunk)),
                         }

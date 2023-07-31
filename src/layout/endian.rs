@@ -528,6 +528,11 @@ pub type NativeEndian = BigEndian;
 #[cfg(target_endian = "little")]
 pub type NativeEndian = LittleEndian;
 
+/// .
+pub const fn little_endian_codec() -> Endian {
+    Endian::Little
+}
+
 /// Byte order serialization variant.
 ///
 /// The [`Default`] implementation is calculated at compile time using the

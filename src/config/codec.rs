@@ -4,14 +4,17 @@
 use crate::Endian;
 use crate::{Error, Result};
 
-pub type Uint = u32;
-
-/// Type that encodes the codec parameters into the type system.
+/// Configurable type that is used to decode and encode data.
 ///
-/// By using a combination of generic arguments, const generics and various type
-/// trickery, we can build a struc that can be used to configure a [`Decoder`]
-/// instance.
-#[derive(Copy, Clone, Debug)]
+/// The codec uses an [`Endian`] type to determine the byte order and a [`Limit`] to
+/// define the maximum size of the type to be decoded.
+///
+/// # Limit
+///
+/// Setting a limit helps reduce the risk of overflowing the stack. If no limit is
+/// set, the stack could easily overflow, causing a runtime panic or, in the worst
+/// case, possible undefined behaviour.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Codec {
     endian: Endian,
     limit: Limit,
@@ -141,7 +144,7 @@ impl CodecBuilder {
 
     /// Use little endian byte order serialization for the codec.
     #[inline]
-    pub const fn with_const_limit<const LIMIT: Uint>(self) -> CodecBuilder {
+    pub const fn with_const_limit<const LIMIT: u32>(self) -> CodecBuilder {
         CodecBuilder { limit: Some(Limit::new(LIMIT)), ..self }
     }
 

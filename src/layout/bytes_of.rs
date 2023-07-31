@@ -5,13 +5,15 @@ use core::num::{
     NonZeroI128, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU128,
     NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize,
 };
-use core::slice;
 
 use crate::integer::{Isize, Usize, I128, I16, I32, I64, I8, U128, U16, U32, U64, U8};
-use crate::{Abi, Bytes, Chunk};
+use crate::{Abi, Chunk, Slice};
 
-/// Trait to define types that can be represented as a borrowed slice of bytes, or
-/// `&[u8]`.
+/// Trait to define types that can be represented as raw bytes.
+///
+/// # Endianness
+/// The returned bytes are not endian-aware. Any methods belonging to this trait
+/// return the bytes in the order they are currently represented in.
 ///
 /// # Source Trait
 ///
@@ -40,13 +42,13 @@ pub unsafe trait BytesOf {
         // `mem::size_of_val` function to get the number of bytes comprising `Self`.
         unsafe {
             let data = <*const Self>::from(self).cast::<u8>();
-            slice::from_raw_parts(data, mem::size_of_val(self))
+            core::slice::from_raw_parts(data, mem::size_of_val(self))
         }
     }
 }
 
 unsafe impl<const N: usize> BytesOf for Chunk<N> {}
-unsafe impl BytesOf for Bytes<'_> {}
+unsafe impl BytesOf for Slice<'_> {}
 
 unsafe impl<T> BytesOf for [T] where T: Abi {}
 unsafe impl<'a, T> BytesOf for &'a [T] where T: Abi {}
@@ -86,7 +88,7 @@ pub unsafe trait BytesOfMut {
         // `mem::size_of_val` function to get the number of bytes comprising `Self`.
         unsafe {
             let bptr = <*mut Self>::from(self).cast::<u8>();
-            slice::from_raw_parts_mut(bptr, mem::size_of_val(self))
+            core::slice::from_raw_parts_mut(bptr, mem::size_of_val(self))
         }
     }
 }

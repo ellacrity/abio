@@ -5,10 +5,10 @@
 //! arrays.
 
 use core::num::NonZeroUsize;
-use core::ops::{Index, IndexMut, Range};
+use core::ops::{Index, Range};
 
 use crate::source::Chunk;
-use crate::{Array, Bytes, Error, Result, Source};
+use crate::{Array, Error, Result, Slice, Source};
 
 /// A region of memory defined by a pair of indices marking the start and end offsets
 /// of an allocated object in memory.
@@ -90,15 +90,22 @@ impl Span {
         self.start..self.end
     }
 
+    /// Returns a [`Slice`] from a byte slice starting at `offset`, spanning `size`
+    /// bytes in length.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `bytes.len() < offset + size`.
     #[inline]
-    pub(crate) const fn span_bytes<'data>(&self, bytes: &'data [u8]) -> Result<Bytes<'data>> {
-        if bytes.len() < self.len() {
-            Err(Error::out_of_bounds(self.len(), bytes.len()))
+    pub const fn span_bytes(bytes: &[u8], offset: usize, size: usize) -> Result<Slice<'_>> {
+        let span = Span::new(offset, size);
+        if bytes.len() < span.len() {
+            Err(Error::out_of_bounds(span.len(), bytes.len()))
         } else {
             // SAFETY: The check above verifies that `self.start` and `self.size()` are
             // within the bounds of `bytes`. The only way to obtain a `Span` instance is via one
             // of its safe constructor functions, so this is safe.
-            Ok(unsafe { Bytes::new_offset_unchecked(bytes, self.len()) })
+            Ok(unsafe { Slice::from_slice_at_unchecked(bytes, span.len()) })
         }
     }
 
@@ -148,13 +155,7 @@ impl Index<Span> for [u8] {
     }
 }
 
-impl IndexMut<Span> for [u8] {
-    fn index_mut(&mut self, span: Span) -> &mut Self::Output {
-        &mut self[span.start..span.end]
-    }
-}
-
-impl<'a> Index<Span> for Bytes<'a> {
+impl<'data> Index<Span> for Slice<'data> {
     type Output = [u8];
 
     fn index(&self, span: Span) -> &Self::Output {

@@ -7,9 +7,8 @@
 //! aggressive optimizations, since the size of the slice is explicit.
 
 use core::ops::Deref;
-use core::slice;
 
-use crate::source::Bytes;
+use crate::source::Slice;
 use crate::{shims, Abi, Array, Result};
 
 /// A fixed-size array of bytes, or "chunk".
@@ -147,7 +146,7 @@ impl<const N: usize> Chunk<N> {
 // above,     // which ensure `offset + N` are within bounds of the slice.
 // Additionally, the     // `Chunk` type represents an array of `u8`, so it has no
 // alignment requirements.     unsafe {
-//         let bytes = slice::from_raw_parts(bytes.as_ptr(), N);
+//         let bytes = core::core::slice::from_raw_parts(bytes.as_ptr(), N);
 //         if bytes.len() != N {
 //             Err(Error::size_mismatch(N, bytes.len()))
 //         } else {
@@ -162,7 +161,7 @@ impl<const N: usize> Array<N> for Chunk<N> {
     #[inline]
     fn from_ptr<T: Abi>(ptr: *const T) -> Result<Self> {
         let ptr = ptr.cast::<[u8; N]>();
-        let slice = unsafe { slice::from_raw_parts(ptr.cast::<u8>(), N) };
+        let slice = unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), N) };
         Chunk::from_bytes(slice)
     }
 }
@@ -199,9 +198,9 @@ impl<'data, const N: usize> TryFrom<&'data [u8]> for Chunk<N> {
     }
 }
 
-impl<'data, const N: usize> From<Bytes<'data>> for Result<Chunk<N>> {
+impl<'data, const N: usize> From<Slice<'data>> for Result<Chunk<N>> {
     #[inline]
-    fn from(bytes: Bytes<'data>) -> Result<Chunk<N>> {
+    fn from(bytes: Slice<'data>) -> Result<Chunk<N>> {
         crate::read_chunk_bytes!(bytes, N)
     }
 }
@@ -239,7 +238,8 @@ macro_rules! read_chunk_bytes {
         // entire slice, which is a safe operation. Additionally, the `Chunk` type represents
         // a slice of `u8` elements, so alignment checks can be skipped (alignment is
         // 1).
-        let chunk_bytes = unsafe { ::core::slice::from_raw_parts($bytes.as_ptr(), $size) };
+        let chunk_bytes =
+            unsafe { ::core::slice::from_raw_parts($bytes.as_ptr().add($offset), $size) };
         if chunk_bytes.len() != $size {
             Err($crate::Error::size_mismatch($size, chunk_bytes.len()))
         } else {

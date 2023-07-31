@@ -21,8 +21,6 @@
 //! [`abio`][crate] crate.
 #![allow(dead_code)]
 
-use core::slice;
-
 /*
 /// Converts a byte slice into an array of a specified size.
 ///
@@ -51,7 +49,7 @@ pub fn to_byte_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8;
 /// the source of the data is dynamically sized.
 ///
 /// This method "pretends" that we have a fixed size type, although the returned type
-/// is a [`Bytes`] instance.
+/// is a [`Slice`] instance.
 #[inline]
 pub const fn take_slice<'data>(bytes: &'data [u8], size: usize) -> Result<Bytes<'data>> {
     match Bytes::new_offset(bytes, 0) {
@@ -73,7 +71,7 @@ pub const fn split_chunk_at<const N: usize>(
         let offset = span.start();
         let bytes = unsafe {
             let ptr = source.as_ptr().add(offset);
-            slice::from_raw_parts(ptr, len - span.start())
+            core::core::core::slice::from_raw_parts(ptr, len - span.start())
         };
         // SAFETY: We manually verified the bounds of the split.
         let (first, tail) = unsafe { split_at_unchecked(bytes, N) };
@@ -109,8 +107,8 @@ pub const unsafe fn split_at_unchecked(bytes: &[u8], offset: usize) -> (&[u8], &
     debug_assert!(bytes.len() >= offset);
     let range = bytes.as_ptr()..bytes.as_ptr().add(offset);
     (
-        slice::from_raw_parts(range.start, offset),
-        slice::from_raw_parts(range.end, bytes.len() - offset),
+        core::slice::from_raw_parts(range.start, offset),
+        core::slice::from_raw_parts(range.end, bytes.len() - offset),
     )
 }
 

@@ -84,7 +84,8 @@ pub unsafe trait Abi: Sized + 'static {
     #[inline]
     fn alignment(&self) -> usize {
         debug_assert_eq!(align_of_val(self), Self::ALIGN);
-        Self::ALIGN
+        // Self::ALIGN
+        core::mem::align_of_val(self)
     }
 
     /// Returns the size of the pointed-to value in bytes at runtime.
@@ -93,17 +94,21 @@ pub unsafe trait Abi: Sized + 'static {
     /// statically-known size, e.g., a slice [`[T]`][slice] or a [trait object],
     /// then `size_of_val` can be used to get the dynamically-known size.
     ///
+    /// [slice]: core::slice
     /// [trait object]: ../../book/ch17-02-trait-objects.html
     #[inline]
     fn size(&self) -> usize {
         debug_assert_eq!(size_of_val(self), Self::SIZE);
-        Self::SIZE
+        size_of_val(self)
     }
+}
 
+/// Trait
+pub trait Transmute {
     /// Attempts to interpret the bits comprising this type as the target type `T`,
     /// where `T: Abi`.
     #[inline]
-    fn try_cast_bytes<T: Abi>(bytes: &[u8]) -> Result<T> {
+    fn transmute_bytes<T: Abi>(bytes: &[u8]) -> Result<T> {
         if bytes.len() != T::SIZE {
             Err(crate::Error::size_mismatch(T::SIZE, bytes.len()))
         } else if !bytes.is_aligned_with::<T>() {
@@ -116,7 +121,7 @@ pub unsafe trait Abi: Sized + 'static {
     /// Attempts to interpret the bits comprising this type as the target type `T`,
     /// where `T: Abi`.
     #[inline]
-    fn try_cast_array<T: Abi, const N: usize>(array: [u8; N]) -> Result<T> {
+    fn transmute_array<T: Abi, const N: usize>(array: [u8; N]) -> Result<T> {
         if array.len() != T::SIZE {
             Err(crate::Error::size_mismatch(T::SIZE, array.len()))
         } else if !array.is_aligned_with::<T>() {

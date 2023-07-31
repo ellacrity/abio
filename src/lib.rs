@@ -17,7 +17,7 @@ mod config;
 pub use config::{Codec, CodecBuilder, Limit};
 
 mod source;
-pub use source::{Array, Buf, ByteArray, Bytes, Chunk, Source, Span};
+pub use source::{Array, Buf, ByteArray, Chunk, Slice, Source, Span};
 
 mod error;
 pub use error::{Error, Result};
