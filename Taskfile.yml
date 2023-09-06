@@ -1,0 +1,21 @@
+# https://taskfile.dev
+
+version: '3'
+
+dotenv:
+  - ".env"
+
+vars:
+  PROFILE: ""
+
+tasks:
+  default:
+    cmds:
+      - echo "{{.GREETING}}"
+    silent: true
+
+  build:
+    cmds:
+    - cmd: cargo build --profile=dev
+    - cmd: cargo build --profile=release
+    

@@ -1,5 +1,5 @@
-`BytesOf` trait cannot be derived for types that contain fields that are not `BytesOf`.
+`AsBytes` trait cannot be derived for types that contain fields that are not `AsBytes`.
 
-Every field in the struct must be `BytesOf`.
+Every field in the struct must be `AsBytes`.
 
-To rectify this problem, you must implement `BytesOf` for your type.
+To rectify this problem, you must implement `AsBytes` for your type.

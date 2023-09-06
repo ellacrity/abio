@@ -1,38 +1,26 @@
-[package]
-name = "abio"
-version = "0.3.0"
+[workspace]
+members = ["abio", "abio_derive"]
+resolver = "2"
+
+[workspace.package]
+version = "0.4.0"
 edition = "2021"
-description = """
-Safe abstractions for interfacing with the native operating system ABI.
-"""
+description = "Safely transmute raw byte slices directly to concrete types"
 license = "MIT"
-authors = ["ellacrity"]
-exclude = ["/main.rs"]
+authors = [
+	"ellacrity <116411054+ellacrity@users.noreply.github.com>",
+	"Peter Donovan <peter.donovan@proton.me>",
+]
 categories = ["encoding", "no-std", "development-tools::ffi"]
+documentation = "https://docs.rs/abio"
+repository = "https://github.com/ellacrity/abio"
 
-[lib]
-name = "abio"
-path = "src/lib.rs"
-
-[features]
-default = ["derive"]
-derive = ["abio_derive"]
-std = []
-
-[dependencies]
-abio_derive = { version = "0.1.1", path = "abio_derive", optional = true }
-cfg-if = "1.0.0"
-
-[dev-dependencies]
-getrandom = "0.2.10"
-libloading = "0.8.0"
-
-# Enable all features for the docs.rs metadata.
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
-rustdoc-args = ["--generate-link-to-definition"]
+# [workspace.dependencies]
+# abio_derive = { path = "abio_derive" }
 
 [profile.dev]
+# Reduces the compilation time of the crates in our workspace
+# Toggle to on if you need to view extra debug information.
 debug = 0
 debug-assertions = true
 
@@ -42,6 +30,5 @@ debug-assertions = true
 
 [profile.release]
 debug = 0
-debug-assertions = false
 strip = true
 lto = true

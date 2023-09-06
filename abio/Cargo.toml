@@ -1,0 +1,32 @@
+[package]
+name = "abio"
+description = "Safely transmute raw byte slices directly to concrete types"
+documentation = "https://docs.rs/abio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+categories.workspace = true
+repository.workspace = true
+readme = "/README.md"
+
+[features]
+default = ["derive", "simple-codec"]
+derive = ["abio_derive"]
+simple-codec = []
+
+[dependencies]
+abio_derive = { path = "../abio_derive", optional = true }
+bincode = { version = "2.0.0-rc.3", default-features = false, features = ["derive"] }
+rand = { version = "0.8.5", default-features = false, features = ["getrandom", "min_const_gen"] }
+
+# Enable all features for the docs.rs metadata.
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+rustdoc-args = ["--generate-link-to-definition"]

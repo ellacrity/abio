@@ -1,17 +1,10 @@
-# Build directives
 [build]
 
-# Windows x64 MSVC (Intel x86_64)
-#
-# Windows MSVC toolchain (native)
 [target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=native"]
 
-# Linux x64 GNU (Intel x86_64)
-#
-# Linux desktop and server
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
 [target.x86_64-unknown-linux-gnu]
-
-# Linux aarch64 GNU (Cortex A72)
-# 
-# Raspberry PI 4
-[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]

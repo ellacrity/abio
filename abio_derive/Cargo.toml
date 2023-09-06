@@ -1,20 +1,27 @@
 [package]
 name = "abio_derive"
-version = "0.1.1"
-edition = "2021"
-description = "Derive macros for the `abio` crate."
-categories = ["encoding", "no-std"]
-license = "MIT"
+description = "Procedural derive macros for abio"
+documentation = "https://docs.rs/bytecheck_derive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+categories.workspace = true
+repository.workspace = true
 
 [lib]
 name = "abio_derive"
 proc-macro = true
 
 [dependencies]
-proc-macro2 = { version = "1.0.66", features = ["nightly", "span-locations"] }
-quote = "1"
-syn = { version = "2", features = ["extra-traits", "full"] }
+proc-macro2 = { version = "1.0", features = ["nightly", "span-locations"] }
+quote = "1.0"
+syn = { version = "2.0", features = ["extra-traits", "full"] }
 
 [dev-dependencies.abio]
-path = "../"
+path = "../abio"
 features = ["derive"]
+
+[features]
+default = ["std"]
+std = []

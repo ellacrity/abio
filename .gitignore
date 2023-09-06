@@ -1,27 +1,3 @@
-# Cargo build artifacts
 /target
-/Cargo.lock
-
-# Internal assets and artifacts
-assets/
-internal/
-private/
-spec/
-
-# Archived and temporary files
-.archive/
-.backlog/
-.temp/
-
-# IDEs and Editors
-.idea/
-.vscode/
-!.vscode/settings.json
-
-# Scratch space
-scratch*/
-
-# Environment variables
-*.env
-.envrc
-
+.cargo-ok
+.DS_Store

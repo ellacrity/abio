@@ -1,85 +1,83 @@
 #![allow(dead_code)]
 
 use proc_macro2::{Span, TokenStream};
-use quote::ToTokens;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::{parse_macro_input, DeriveInput, Error, Result};
 
 mod helpers;
-use helpers::{Abi, BytesOf, Generate, Zeroable};
-
-const ABIO_DEBUG: &str = "ABIO_DEBUG";
+use helpers::{Abi, AsBytes, Decode, Marker, Zeroable};
+mod traits;
 
 #[proc_macro_derive(Abi)]
 pub fn derive_abi(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_marker_trait_inner::<Abi>(input)
+    let input = parse_macro_input!(input as DeriveInput);
+    match gen_marker_trait_impl::<Abi>(&input) {
+        Ok(imp) => imp.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
-#[proc_macro_derive(BytesOf)]
+#[proc_macro_derive(AsBytes)]
 pub fn derive_as_bytes(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_marker_trait_inner::<BytesOf>(input)
+    let input = parse_macro_input!(input as DeriveInput);
+    match gen_marker_trait_impl::<AsBytes>(&input) {
+        Ok(imp) => imp.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 #[proc_macro_derive(Zeroable)]
 pub fn derive_zeroable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_marker_trait_inner::<Zeroable>(input)
-}
-
-fn derive_marker_trait_inner<G: Generate>(
-    input: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    generate_trait_impl::<G>(input).unwrap_or_else(|e| e.into_compile_error()).into()
+    match gen_marker_trait_impl::<Zeroable>(&input) {
+        Ok(imp) => imp.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 #[proc_macro_derive(Decode)]
 pub fn derive_decode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
     // Parse the input AST from the `Decode<T>` trait.
     let expanded = parse_decode_input(&input);
 
     // Return the generated implementation as tokens
-    TokenStream::from(expanded).into()
+    proc_macro::TokenStream::from(expanded)
 }
 
-fn inspect_input(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let parsed = parse_macro_input!(tts as DeriveInput);
-    println!("{parsed:#?}");
-    proc_macro::TokenStream::from(parsed.to_token_stream())
-}
-
-fn parse_decode_input(input: &DeriveInput) -> proc_macro2::TokenStream {
-    let name = format_ident!("{}", input.ident);
-    quote! {
-        #name
-    }
+fn parse_decode_input(input: &DeriveInput) -> TokenStream {
+    let ident = &input.ident;
+    quote!()
 }
 
 fn derive_decode_trait(_input: &DeriveInput) -> TokenStream {
     unimplemented!()
 }
 
-fn generate_trait_impl<G: Generate>(mut input: DeriveInput) -> Result<proc_macro2::TokenStream> {
-    // Enforce Abi to be implemented on all
+fn gen_marker_trait_impl<G: Marker>(input: &DeriveInput) -> Result<TokenStream> {
+    // Ensure that each field of the type implements the trait
+    let mut input = input.clone();
     let trait_name = G::ident(&input);
-    G::add_trait_marker(&mut input.generics, &trait_name);
+
+    let input = G::add_trait_marker(&mut input, &trait_name);
 
     let name = &input.ident;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    G::check_attributes(&input.data, &input.attrs).map_err(|err| {
+    _ = G::validate_attributes(&input.data, &input.attrs).map_err(|err| {
         eprintln!("{err:?}");
         Error::new(
             Span::call_site(),
             "Cannot implement this trait for this type due to invalid attribute values.",
         )
-    })?;
+    });
 
     let assertions = match G::asserts(&input) {
         Ok(asserts) => asserts,
-        Err(err) => err.into_compile_error().to_token_stream(),
+        Err(err) => err
+            .into_compile_error()
+            .to_token_stream(),
     };
 
     let (trait_impl_extras, trait_impl) = G::trait_impl(&input)?;
